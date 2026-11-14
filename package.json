@@ -1,0 +1,7 @@
+{
+  "name":"batipilot-full","version":"1.0.0","private":true,
+  "scripts":{"dev":"next dev","build":"prisma generate && next build","start":"next start","postinstall":"prisma generate","db:push":"prisma db push","db:seed":"tsx prisma/seed.ts","test":"vitest run"},
+  "prisma":{"seed":"tsx prisma/seed.ts"},
+  "dependencies":{"@prisma/client":"6.19.0","next":"16.0.10","react":"19.2.0","react-dom":"19.2.0"},
+  "devDependencies":{"@types/node":"24.10.0","@types/react":"19.2.2","@types/react-dom":"19.2.2","prisma":"6.19.0","tsx":"4.20.6","typescript":"5.9.3","vitest":"3.2.4"}
+}

@@ -1,0 +1,1 @@
+import './style.css';export const metadata={title:'BatiPilot',description:'Pilotage de cabinet et de chantier'};export default function Layout({children}:{children:React.ReactNode}){return <html lang="fr"><body>{children}</body></html>}

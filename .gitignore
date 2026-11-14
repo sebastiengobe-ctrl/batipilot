@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+node_modules/**
+
+# Next.js
+.next/
+.next/**
+out/
+out/**
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Tests
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
