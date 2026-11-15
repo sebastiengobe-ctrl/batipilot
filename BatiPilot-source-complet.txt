@@ -1,0 +1,2139 @@
+===== FILE: app\api\auth\login\route.ts =====
+import {db} from '@/lib/db';import {verifyPassword} from '@/lib/password';import {createSession} from '@/lib/auth';
+export async function POST(req:Request){const b=await req.json();const u=await db.user.findUnique({where:{email:String(b.email||'').trim().toLowerCase()}});if(!u||u.status!=='ACTIVE'||!await verifyPassword(String(b.password||''),u.passwordHash))return Response.json({error:'Identifiants invalides'},{status:401});await createSession(u.id);return Response.json({ok:true})}
+
+===== FILE: app\api\auth\logout\route.ts =====
+import {clearSession} from '@/lib/auth';export async function POST(){await clearSession();return Response.json({ok:true})}
+
+===== FILE: app\api\budgets\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';export async function GET(){try{const u=await requireUser();return Response.json(await db.budgetLine.findMany({where:{project:{organizationId:u.organizationId}},include:{project:true}}))}catch(e){return fail(e)}}export async function POST(r:Request){try{const u=await requireUser(),b=await r.json();if(!['ADMIN','PROJECT_MANAGER'].includes(u.role))throw Error('FORBIDDEN');const p=await db.project.findFirst({where:{id:b.projectId,organizationId:u.organizationId}});if(!p)throw Error('FORBIDDEN');return Response.json(await db.budgetLine.create({data:{label:b.label,category:b.category,budget:b.budget||0,committed:b.committed||0,paid:b.paid||0,projectId:p.id}}),{status:201})}catch(e){return fail(e)}}
+
+===== FILE: app\api\clients\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';
+export async function GET(){try{const u=await requireUser();return Response.json(await db.client.findMany({where:{organizationId:u.organizationId},orderBy:{name:'asc'}}))}catch(e){return fail(e)}}
+export async function POST(req:Request){try{const u=await requireUser(),b=await req.json();return Response.json(await db.client.create({data:{name:b.name,email:b.email||null,phone:b.phone||null,address:b.address||null,organizationId:u.organizationId}}),{status:201})}catch(e){return fail(e)}}
+
+===== FILE: app\api\collaborators\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';
+export async function GET(){try{const u=await requireUser();const users=await db.user.findMany({where:{organizationId:u.organizationId,status:'ACTIVE',role:{in:['ADMIN','PROJECT_MANAGER','COLLABORATOR']}},select:{id:true,name:true,email:true,role:true,jobTitle:true,capacityHours:true,assignedTasks:{where:{status:{not:'DONE'}},select:{plannedHours:true}}},orderBy:{name:'asc'}});return Response.json(users.map(x=>({...x,plannedLoad:x.assignedTasks.reduce((a,t)=>a+(t.plannedHours||0),0)})))}catch(e){return fail(e)}}
+
+===== FILE: app\api\companies\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';
+export async function GET(){try{const u=await requireUser();return Response.json(await db.company.findMany({where:{organizationId:u.organizationId},orderBy:{name:'asc'}}))}catch(e){return fail(e)}}
+export async function POST(req:Request){try{const u=await requireUser(),b=await req.json();return Response.json(await db.company.create({data:{name:b.name,trade:b.trade||null,email:b.email||null,phone:b.phone||null,organizationId:u.organizationId}}),{status:201})}catch(e){return fail(e)}}
+
+===== FILE: app\api\dashboard\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';
+export async function GET(){try{const u=await requireUser(),o=u.organizationId;const [projects,tasks,clients,companies,observations,documents,signatures]=await Promise.all([db.project.count({where:{organizationId:o}}),db.workTask.count({where:{project:{organizationId:o},status:{not:'DONE'}}}),db.client.count({where:{organizationId:o}}),db.company.count({where:{organizationId:o}}),db.observation.count({where:{project:{organizationId:o},status:{in:['OPEN','OVERDUE','TO_VERIFY']}}}),db.document.count({where:{project:{organizationId:o}}}),db.signatureRequest.count({where:{project:{organizationId:o},status:{in:['SENT','VIEWED']}}})]);return Response.json({projects,tasks,clients,companies,observations,documents,signatures})}catch(e){return fail(e)}}
+
+===== FILE: app\api\documents\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';export async function GET(){try{const u=await requireUser();return Response.json(await db.document.findMany({where:{project:{organizationId:u.organizationId}},include:{project:true},orderBy:{createdAt:'desc'}}))}catch(e){return fail(e)}}export async function POST(r:Request){try{const u=await requireUser(),b=await r.json(),p=await db.project.findFirst({where:{id:b.projectId,organizationId:u.organizationId}});if(!p)throw Error('FORBIDDEN');return Response.json(await db.document.create({data:{name:b.name,category:b.category,storageKey:b.storageKey||null,mimeType:b.mimeType||null,visibility:b.visibility||'INTERNAL',projectId:p.id}}),{status:201})}catch(e){return fail(e)}}
+
+===== FILE: app\api\lots\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';export async function GET(){try{const u=await requireUser();return Response.json(await db.lot.findMany({where:{project:{organizationId:u.organizationId}},include:{project:true,company:true}}))}catch(e){return fail(e)}}export async function POST(r:Request){try{const u=await requireUser(),b=await r.json(),p=await db.project.findFirst({where:{id:b.projectId,organizationId:u.organizationId}});if(!p)throw Error('FORBIDDEN');return Response.json(await db.lot.create({data:{number:b.number,name:b.name,projectId:p.id,companyId:b.companyId||null,estimate:b.estimate||null,contractAmount:b.contractAmount||null}}),{status:201})}catch(e){return fail(e)}}
+
+===== FILE: app\api\me\route.ts =====
+import { currentUser } from '@/lib/auth';
+export async function GET() {
+  const user = await currentUser();
+  if (!user) return Response.json({ error: 'UNAUTHORIZED' }, { status: 401 });
+  return Response.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role, organizationId: user.organizationId } });
+}
+
+===== FILE: app\api\observations\[id]\route.ts =====
+import { db } from '@/lib/db';import { requireUser, fail } from '@/lib/auth';
+export async function PATCH(r:Request,{params}:{params:Promise<{id:string}>}){try{const u=await requireUser(),{id}=await params,b=await r.json();const x=await db.observation.findFirst({where:{id,project:{organizationId:u.organizationId}}});if(!x)throw Error('FORBIDDEN');return Response.json(await db.observation.update({where:{id},data:{status:b.status,dueAt:b.dueAt?new Date(b.dueAt):undefined}}))}catch(e){return fail(e)}}
+
+===== FILE: app\api\observations\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';export async function GET(){try{const u=await requireUser();return Response.json(await db.observation.findMany({where:{project:{organizationId:u.organizationId}},include:{project:true,lot:true,company:true}}))}catch(e){return fail(e)}}export async function POST(r:Request){try{const u=await requireUser(),b=await r.json(),p=await db.project.findFirst({where:{id:b.projectId,organizationId:u.organizationId}});if(!p)throw Error('FORBIDDEN');return Response.json(await db.observation.create({data:{title:b.title,description:b.description||null,location:b.location||null,dueAt:b.dueAt?new Date(b.dueAt):null,projectId:p.id,lotId:b.lotId||null,companyId:b.companyId||null}}),{status:201})}catch(e){return fail(e)}}export async function PATCH(r:Request){try{const u=await requireUser(),b=await r.json(),x=await db.observation.findFirst({where:{id:b.id,project:{organizationId:u.organizationId}}});if(!x)throw Error('FORBIDDEN');return Response.json(await db.observation.update({where:{id:x.id},data:{status:b.status,dueAt:b.dueAt?new Date(b.dueAt):undefined}}))}catch(e){return fail(e)}}
+
+===== FILE: app\api\phases\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';export async function GET(r:Request){try{const u=await requireUser(),p=new URL(r.url).searchParams.get('projectId');return Response.json(await db.phase.findMany({where:{projectId:p||undefined,project:{organizationId:u.organizationId}},include:{deliverables:true},orderBy:{startDate:'asc'}}))}catch(e){return fail(e)}}export async function POST(r:Request){try{const u=await requireUser(),b=await r.json(),p=await db.project.findFirst({where:{id:b.projectId,organizationId:u.organizationId}});if(!p)throw Error('FORBIDDEN');return Response.json(await db.phase.create({data:{code:b.code,name:b.name,projectId:p.id,startDate:b.startDate?new Date(b.startDate):null,endDate:b.endDate?new Date(b.endDate):null}}),{status:201})}catch(e){return fail(e)}}
+
+===== FILE: app\api\planning\[id]\route.ts =====
+import { db } from '@/lib/db';import { requireUser, fail } from '@/lib/auth';
+export async function PATCH(r:Request,{params}:{params:Promise<{id:string}>}){try{const u=await requireUser(),{id}=await params,b=await r.json();const x=await db.planningTask.findFirst({where:{id,project:{organizationId:u.organizationId}}});if(!x)throw Error('FORBIDDEN');return Response.json(await db.planningTask.update({where:{id},data:{progress:b.progress===undefined?undefined:Number(b.progress),start:b.start?new Date(b.start):undefined,end:b.end?new Date(b.end):undefined,title:b.title}}))}catch(e){return fail(e)}}
+
+===== FILE: app\api\planning\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';export async function GET(r:Request){try{const u=await requireUser(),p=new URL(r.url).searchParams.get('projectId');return Response.json(await db.planningTask.findMany({where:{projectId:p||undefined,project:{organizationId:u.organizationId}},include:{lot:true},orderBy:{start:'asc'}}))}catch(e){return fail(e)}}export async function POST(r:Request){try{const u=await requireUser(),b=await r.json(),p=await db.project.findFirst({where:{id:b.projectId,organizationId:u.organizationId}});if(!p)throw Error('FORBIDDEN');return Response.json(await db.planningTask.create({data:{title:b.title,start:new Date(b.start),end:new Date(b.end),progress:Number(b.progress||0),milestone:Boolean(b.milestone),projectId:p.id,lotId:b.lotId||null}}),{status:201})}catch(e){return fail(e)}}export async function PATCH(r:Request){try{const u=await requireUser(),b=await r.json(),x=await db.planningTask.findFirst({where:{id:b.id,project:{organizationId:u.organizationId}}});if(!x)throw Error('FORBIDDEN');return Response.json(await db.planningTask.update({where:{id:x.id},data:{start:b.start?new Date(b.start):undefined,end:b.end?new Date(b.end):undefined,progress:b.progress===undefined?undefined:Number(b.progress),title:b.title}}))}catch(e){return fail(e)}}
+
+===== FILE: app\api\project-members\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';
+export async function GET(r:Request){try{const u=await requireUser(),projectId=new URL(r.url).searchParams.get('projectId');if(!projectId)return Response.json([]);return Response.json(await db.projectMember.findMany({where:{projectId,project:{organizationId:u.organizationId}},include:{user:true}}))}catch(e){return fail(e)}}
+export async function POST(r:Request){try{const u=await requireUser(),b=await r.json(),p=await db.project.findFirst({where:{id:b.projectId,organizationId:u.organizationId}});if(!p)throw Error('FORBIDDEN');return Response.json(await db.projectMember.upsert({where:{projectId_userId:{projectId:p.id,userId:b.userId}},update:{projectRole:b.projectRole||'Collaborateur'},create:{projectId:p.id,userId:b.userId,projectRole:b.projectRole||'Collaborateur'},include:{user:true}}),{status:201})}catch(e){return fail(e)}}
+export async function DELETE(r:Request){try{const u=await requireUser(),b=await r.json(),x=await db.projectMember.findFirst({where:{id:b.id,project:{organizationId:u.organizationId}}});if(!x)throw Error('FORBIDDEN');await db.projectMember.delete({where:{id:x.id}});return Response.json({ok:true})}catch(e){return fail(e)}}
+
+===== FILE: app\api\project-phases\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';
+const MOE=[['ESQ','Esquisse'],['DIAG','Diagnostic'],['APS','Avant-projet sommaire'],['APD','Avant-projet définitif'],['AUT','Autorisations / permis'],['PRO','Études de projet'],['DCE','Dossier de consultation des entreprises'],['ACT','Assistance à la passation des contrats'],['VISA','Visa des études d’exécution'],['DET','Direction de l’exécution des travaux'],['OPC','Ordonnancement, pilotage et coordination'],['AOR','Assistance aux opérations de réception']];
+export async function GET(r:Request){try{const u=await requireUser(),projectId=new URL(r.url).searchParams.get('projectId');if(!projectId)return Response.json([]);return Response.json(await db.phase.findMany({where:{projectId,project:{organizationId:u.organizationId}},include:{_count:{select:{tasks:true,planning:true}}},orderBy:[{startDate:'asc'},{code:'asc'}]}))}catch(e){return fail(e)}}
+export async function POST(r:Request){try{const u=await requireUser(),b=await r.json(),p=await db.project.findFirst({where:{id:b.projectId,organizationId:u.organizationId}});if(!p)throw Error('FORBIDDEN');if(b.template){let cursor=b.startDate?new Date(b.startDate):new Date();const days=Number(b.durationDays||21),out=[];for(const [code,name] of MOE){const old=await db.phase.findUnique({where:{projectId_code:{projectId:p.id,code}}});if(old){out.push(old);continue}const start=new Date(cursor),end=new Date(cursor);end.setDate(end.getDate()+days);out.push(await db.phase.create({data:{projectId:p.id,code,name,startDate:start,endDate:end,progress:0}}));cursor=new Date(end)}return Response.json(out,{status:201})}return Response.json(await db.phase.create({data:{projectId:p.id,code:b.code,name:b.name,startDate:b.startDate?new Date(b.startDate):null,endDate:b.endDate?new Date(b.endDate):null,progress:Number(b.progress||0)}}),{status:201})}catch(e){return fail(e)}}
+export async function PATCH(r:Request){try{const u=await requireUser(),b=await r.json(),x=await db.phase.findFirst({where:{id:b.id,project:{organizationId:u.organizationId}}});if(!x)throw Error('FORBIDDEN');return Response.json(await db.phase.update({where:{id:x.id},data:{name:b.name,progress:b.progress===undefined?undefined:Number(b.progress),startDate:b.startDate?new Date(b.startDate):undefined,endDate:b.endDate?new Date(b.endDate):undefined}}))}catch(e){return fail(e)}}
+
+===== FILE: app\api\project-planning\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';
+export async function GET(r:Request){try{const u=await requireUser(),projectId=new URL(r.url).searchParams.get('projectId');return Response.json(await db.planningTask.findMany({where:{project:{organizationId:u.organizationId},projectId:projectId||undefined},include:{phase:true,lot:true,project:true},orderBy:{start:'asc'}}))}catch(e){return fail(e)}}
+export async function POST(r:Request){try{const u=await requireUser(),b=await r.json(),p=await db.project.findFirst({where:{id:b.projectId,organizationId:u.organizationId}});if(!p)throw Error('FORBIDDEN');return Response.json(await db.planningTask.create({data:{projectId:p.id,phaseId:b.phaseId||null,lotId:b.lotId||null,title:b.title,start:new Date(b.start),end:new Date(b.end),progress:Number(b.progress||0),milestone:b.milestone==='true'||b.milestone===true}}),{status:201})}catch(e){return fail(e)}}
+export async function PATCH(r:Request){try{const u=await requireUser(),b=await r.json(),x=await db.planningTask.findFirst({where:{id:b.id,project:{organizationId:u.organizationId}}});if(!x)throw Error('FORBIDDEN');return Response.json(await db.planningTask.update({where:{id:x.id},data:{title:b.title,phaseId:b.phaseId===undefined?undefined:(b.phaseId||null),progress:b.progress===undefined?undefined:Number(b.progress),start:b.start?new Date(b.start):undefined,end:b.end?new Date(b.end):undefined}}))}catch(e){return fail(e)}}
+
+===== FILE: app\api\project-tasks\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';
+export async function GET(r:Request){try{const u=await requireUser(),q=new URL(r.url).searchParams,projectId=q.get('projectId'),assigneeId=q.get('assigneeId'),phaseId=q.get('phaseId'),status=q.get('status');return Response.json(await db.workTask.findMany({where:{project:{organizationId:u.organizationId},projectId:projectId||undefined,assigneeId:assigneeId||undefined,phaseId:phaseId||undefined,status:status?status as any:undefined},include:{project:true,assignee:true,phase:true},orderBy:[{status:'asc'},{dueAt:'asc'}]}))}catch(e){return fail(e)}}
+export async function POST(r:Request){try{const u=await requireUser(),b=await r.json(),p=await db.project.findFirst({where:{id:b.projectId,organizationId:u.organizationId}});if(!p)throw Error('FORBIDDEN');return Response.json(await db.workTask.create({data:{projectId:p.id,phaseId:b.phaseId||null,title:b.title,description:b.description||null,status:b.status||'TODO',priority:b.priority||'NORMAL',startAt:b.startAt?new Date(b.startAt):null,dueAt:b.dueAt?new Date(b.dueAt):null,plannedHours:b.plannedHours?Number(b.plannedHours):null,assigneeId:b.assigneeId||null}}),{status:201})}catch(e){return fail(e)}}
+export async function PATCH(r:Request){try{const u=await requireUser(),b=await r.json(),x=await db.workTask.findFirst({where:{id:b.id,project:{organizationId:u.organizationId}}});if(!x)throw Error('FORBIDDEN');return Response.json(await db.workTask.update({where:{id:x.id},data:{status:b.status,priority:b.priority,phaseId:b.phaseId===undefined?undefined:(b.phaseId||null),assigneeId:b.assigneeId===undefined?undefined:(b.assigneeId||null),startAt:b.startAt?new Date(b.startAt):undefined,dueAt:b.dueAt?new Date(b.dueAt):undefined,plannedHours:b.plannedHours===undefined?undefined:Number(b.plannedHours),actualHours:b.actualHours===undefined?undefined:Number(b.actualHours)}}))}catch(e){return fail(e)}}
+
+===== FILE: app\api\projects\[id]\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';
+export async function GET(_:Request,{params}:{params:Promise<{id:string}>}){try{const u=await requireUser(),{id}=await params,p=await db.project.findFirst({where:{id,organizationId:u.organizationId},include:{client:true,members:{include:{user:true}},phases:{include:{_count:{select:{tasks:true,planning:true}}}},lots:{include:{company:true}},planning:{include:{phase:true,lot:true}},tasks:{include:{assignee:true,phase:true}},documents:true,observations:true,budgets:true,receptions:{include:{reserves:true}}}});if(!p)return Response.json({error:'Projet introuvable'},{status:404});return Response.json(p)}catch(e){return fail(e)}}
+
+===== FILE: app\api\projects\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';
+export async function GET(){try{const u=await requireUser();return Response.json(await db.project.findMany({where:{organizationId:u.organizationId},include:{client:true},orderBy:{updatedAt:'desc'}}))}catch(e){return fail(e)}}
+export async function POST(req:Request){try{const u=await requireUser();if(!['ADMIN','PROJECT_MANAGER'].includes(u.role))throw Error('FORBIDDEN');const b=await req.json();if(!b.name||!b.reference)return Response.json({error:'Nom et référence requis'},{status:400});return Response.json(await db.project.create({data:{name:b.name,reference:b.reference,address:b.address||null,status:b.status||'PROSPECT',worksBudget:b.worksBudget||null,feesBudget:b.feesBudget||null,organizationId:u.organizationId,clientId:b.clientId||null}}),{status:201})}catch(e){return fail(e)}}
+
+===== FILE: app\api\receptions\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';export async function GET(){try{const u=await requireUser();return Response.json(await db.reception.findMany({where:{project:{organizationId:u.organizationId}},include:{project:true,reserves:true}}))}catch(e){return fail(e)}}export async function POST(r:Request){try{const u=await requireUser(),b=await r.json(),p=await db.project.findFirst({where:{id:b.projectId,organizationId:u.organizationId}});if(!p)throw Error('FORBIDDEN');return Response.json(await db.reception.create({data:{date:new Date(b.date),status:b.status||'PREPARATION',projectId:p.id}}),{status:201})}catch(e){return fail(e)}}
+
+===== FILE: app\api\reserves\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';
+export async function POST(r:Request){try{const u=await requireUser(),b=await r.json();const reception=await db.reception.findFirst({where:{id:b.receptionId,project:{organizationId:u.organizationId}}});if(!reception)throw Error('FORBIDDEN');return Response.json(await db.reserve.create({data:{title:b.title,location:b.location||null,dueAt:b.dueAt?new Date(b.dueAt):null,receptionId:reception.id}}),{status:201})}catch(e){return fail(e)}}
+export async function PATCH(r:Request){try{const u=await requireUser(),b=await r.json();const x=await db.reserve.findFirst({where:{id:b.id,reception:{project:{organizationId:u.organizationId}}}});if(!x)throw Error('FORBIDDEN');return Response.json(await db.reserve.update({where:{id:x.id},data:{status:b.status}}))}catch(e){return fail(e)}}
+
+===== FILE: app\api\signatures\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';export async function GET(){try{const u=await requireUser();return Response.json(await db.signatureRequest.findMany({where:{project:{organizationId:u.organizationId}},include:{project:true},orderBy:{createdAt:'desc'}}))}catch(e){return fail(e)}}export async function POST(r:Request){try{const u=await requireUser(),b=await r.json(),p=await db.project.findFirst({where:{id:b.projectId,organizationId:u.organizationId}});if(!p)throw Error('FORBIDDEN');return Response.json(await db.signatureRequest.create({data:{title:b.title,signers:b.signers||[],dueAt:b.dueAt?new Date(b.dueAt):null,projectId:p.id,provider:b.provider||null}}),{status:201})}catch(e){return fail(e)}}
+
+===== FILE: app\api\tasks\[id]\route.ts =====
+import { db } from '@/lib/db';import { requireUser, fail } from '@/lib/auth';
+export async function PATCH(r:Request,{params}:{params:Promise<{id:string}>}){try{const u=await requireUser(),{id}=await params,b=await r.json();const x=await db.workTask.findFirst({where:{id,project:{organizationId:u.organizationId}}});if(!x)throw Error('FORBIDDEN');return Response.json(await db.workTask.update({where:{id},data:{status:b.status,priority:b.priority,assigneeId:b.assigneeId===undefined?undefined:(b.assigneeId||null),dueAt:b.dueAt?new Date(b.dueAt):undefined}}))}catch(e){return fail(e)}}
+
+===== FILE: app\api\tasks\route.ts =====
+import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';
+export async function GET(){try{const u=await requireUser();return Response.json(await db.workTask.findMany({where:{project:{organizationId:u.organizationId}},include:{project:true,assignee:true},orderBy:{createdAt:'desc'}}))}catch(e){return fail(e)}}
+export async function POST(req:Request){try{const u=await requireUser(),b=await req.json(),p=await db.project.findFirst({where:{id:b.projectId,organizationId:u.organizationId}});if(!p)throw Error('FORBIDDEN');return Response.json(await db.workTask.create({data:{title:b.title,description:b.description||null,status:b.status||'TODO',priority:b.priority||'NORMAL',dueAt:b.dueAt?new Date(b.dueAt):null,plannedHours:b.plannedHours?Number(b.plannedHours):null,projectId:p.id,assigneeId:b.assigneeId||null}}),{status:201})}catch(e){return fail(e)}}
+
+===== FILE: app\api\users\route.ts =====
+import {Role} from '@prisma/client';import {db} from '@/lib/db';import {requireUser,fail} from '@/lib/auth';import {hashPassword} from '@/lib/password';export async function GET(){try{const u=await requireUser();if(u.role!==Role.ADMIN)throw Error('FORBIDDEN');return Response.json(await db.user.findMany({where:{organizationId:u.organizationId},select:{id:true,name:true,email:true,role:true,status:true,jobTitle:true}}))}catch(e){return fail(e)}}export async function POST(r:Request){try{const u=await requireUser(),b=await r.json();if(u.role!==Role.ADMIN)throw Error('FORBIDDEN');return Response.json(await db.user.create({data:{name:b.name,email:String(b.email).toLowerCase(),passwordHash:await hashPassword(b.password),role:b.role||Role.COLLABORATOR,organizationId:u.organizationId}}),{status:201})}catch(e){return fail(e)}}
+
+===== FILE: app\login\page.tsx =====
+'use client';
+import {FormEvent,useState} from 'react';
+import {useRouter} from 'next/navigation';
+export default function LoginPage(){
+ const router=useRouter();const[error,setError]=useState('');const[busy,setBusy]=useState(false);const[show,setShow]=useState(false);const[remember,setRemember]=useState(false);
+ async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError('');const f=new FormData(e.currentTarget);try{const r=await fetch('/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:f.get('email'),password:f.get('password'),remember})});const j=await r.json();if(!r.ok){setError(j.error||'Connexion impossible');return}router.push('/');router.refresh()}catch{setError('Service momentanément indisponible. Réessayez.')}finally{setBusy(false)}}
+ return <main className="bpLogin"><section className="bpLoginVisual"><div className="bpLoginShade"/><div className="bpLoginBrand"><img src="/logo.png" alt="BatiPilot"/><div><b>Bati<span>Pilot</span></b><small>VOS PROJETS, EN TOUTE MAÎTRISE</small></div></div><div className="bpLoginPitch"><h1>Pilotez vos projets,<br/>du premier croquis<br/><span>à la réception.</span></h1><p>Une solution complète pour les architectes et maîtres d’œuvre, qui centralise la gestion, le suivi et la collaboration de tous vos projets.</p><ul><li><i>▣</i><div><b>Projets & planning</b><small>De l’esquisse à la réception</small></div></li><li><i>⚑</i><div><b>Suivi chantier</b><small>Comptes rendus, réserves, photos</small></div></li><li><i>▦</i><div><b>Documents & signatures</b><small>GED, validation, circuits de signature</small></div></li><li><i>€</i><div><b>Budget & honoraires</b><small>Estimations, marchés, situations</small></div></li><li><i>◉</i><div><b>Collaboration</b><small>Clients, entreprises, équipes</small></div></li></ul></div><div className="bpLoginSignature">Des projets<br/>qui prennent vie</div></section><section className="bpLoginFormSide"><div className="bpLang">◎ Français⌄</div><form className="bpLoginCard" onSubmit={submit}><h2>Bienvenue sur <span>BatiPilot</span></h2><p>Connectez-vous pour accéder à votre espace de travail.</p><label>E-mail<div className="bpInput"><i>✉</i><input name="email" type="email" required autoComplete="username" placeholder="votre@cabinet.fr"/></div></label><label>Mot de passe<div className="bpInput"><i>⌑</i><input name="password" type={show?'text':'password'} required autoComplete="current-password" placeholder="Votre mot de passe"/><button type="button" className="bpEye" onClick={()=>setShow(!show)}>{show?'◉':'◎'}</button></div></label><div className="bpLoginOptions"><label className="bpRemember"><input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)}/> Se souvenir de moi</label><button type="button" className="bpLink" onClick={()=>setError('Contactez votre administrateur BatiPilot pour réinitialiser votre mot de passe.')}>Mot de passe oublié ?</button></div>{error&&<div className="bpLoginError" role="alert">{error}</div>}<button className="bpLoginSubmit" disabled={busy}>{busy?'Connexion…':'Se connecter →'}</button><div className="bpSecurity"><b>♢ Accès sécurisé</b><small>Session chiffrée et données hébergées dans votre environnement BatiPilot.</small></div></form><footer>Mentions légales　|　Confidentialité　|　Support<br/><small>© 2026 BatiPilot. Tous droits réservés.</small></footer></section></main>
+}
+
+===== FILE: app\layout.tsx =====
+import './style.css';export const metadata={title:'BatiPilot',description:'Pilotage de cabinet et de chantier'};export default function Layout({children}:{children:React.ReactNode}){return <html lang="fr"><body>{children}</body></html>}
+
+===== FILE: app\page.tsx =====
+import App from '@/components/BatiPilotApp';export default function Page(){return <App/>}
+
+===== FILE: app\style-avant-correction.css =====
+:root{--b:#40a2d1;--d:#262223;--bg:#f4f8fa;--l:#dfe8ec;--m:#71808a}*{box-sizing:border-box}body{margin:0;font-family:Inter,Segoe UI,Arial;color:#26323a;background:var(--bg)}button,select{font:inherit}.shell{display:grid;grid-template-columns:240px 1fr;min-height:100vh}aside{background:var(--d);color:white;padding:22px 16px}.brand{display:flex;align-items:center;gap:10px;margin-bottom:22px}.brand img{width:53px;border-radius:13px}.brand b{display:block;color:var(--b);font-size:21px}.brand small{color:#cbd3d6}aside select{width:100%;padding:9px;border-radius:8px;margin-bottom:14px}nav button{display:flex;gap:10px;width:100%;border:0;background:none;color:white;padding:10px 12px;border-radius:8px;text-align:left;cursor:pointer;margin:2px 0}nav button.active,nav button:hover{background:var(--b)}nav i{width:19px;font-style:normal}main{padding:30px 36px;overflow:hidden}header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}header h1{margin:4px 0;font-size:29px}header small,.row small,.kanban small{display:block;color:var(--m)}header button,.docs button{border:0;background:var(--b);color:#fff;padding:10px 15px;border-radius:8px;font-weight:700;margin-left:8px}.outline{background:white!important;color:var(--b)!important;border:1px solid var(--b)!important}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:14px}.cards article,.panel{background:white;border:1px solid var(--l);border-radius:14px;padding:17px;box-shadow:0 3px 12px #2030400b}.cards strong{display:block;color:var(--b);font-size:26px;margin-top:6px}.panel{margin-top:14px}.panel h2{margin:0 0 12px;font-size:18px}.row{display:flex;justify-content:space-between;align-items:center;padding:12px 2px;border-top:1px solid #edf1f3}.row:first-child{border-top:0}.row span{background:#edf7fb;color:#267ca5;border-radius:99px;padding:5px 9px;font-size:12px;font-weight:700}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px 8px;border-bottom:1px solid #e8eef1}th{font-size:11px;color:var(--m);text-transform:uppercase}.gantt{display:grid;grid-template-columns:170px repeat(8,minmax(42px,1fr)) 55px;overflow:auto;font-size:11px}.gantt>*{padding:9px 5px;border-bottom:1px solid #edf1f3}.gantt .bar{background:var(--b);margin:4px 2px;padding:5px;border-radius:4px}.gantt em{font-style:normal;font-weight:700}.kanban{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}.kanban section{background:#edf2f4;border-radius:12px;padding:12px}.kanban article{background:white;border:1px solid var(--l);border-radius:10px;padding:12px;margin:9px 0}.kanban article span{display:inline-block;margin-top:12px;color:#a56516;background:#fff0dc;padding:4px 7px;border-radius:99px;font-size:11px}.docs{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.docs article{border:1px solid var(--l);border-radius:11px;padding:14px}.docs article>b{font-size:25px;color:var(--b)}.hero{background:linear-gradient(120deg,var(--d),#35515f);color:white;padding:25px;border-radius:16px;display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.hero strong{font-size:42px;color:#7bd0f5}@media(max-width:900px){.shell{grid-template-columns:1fr}aside{display:none}main{padding:18px}.cards{grid-template-columns:repeat(2,1fr)}.kanban,.docs{grid-template-columns:1fr}header{align-items:flex-start;gap:10px}}
+/* Copier à la fin de app/style.css */
+.modal{position:fixed;inset:0;background:#14263199;display:grid;place-items:center;z-index:20;padding:20px}.form{width:650px;max-width:95vw;max-height:90vh;overflow:auto}.form label{display:block;font-weight:700;font-size:13px;margin:11px 0}.form input,.form select,.form textarea{display:block;width:100%;padding:10px;border:1px solid #cad8df;border-radius:8px;margin-top:5px}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}.error{background:#fee;color:#922;padding:10px;border-radius:8px}.block{padding:13px;border-bottom:1px solid #e5ecef}.block>span{float:right}.ganttApi{display:grid;grid-template-columns:2fr 1fr 1fr 2fr;gap:4px}.ganttApi>b,.ganttRow>*{padding:10px;border-bottom:1px solid #e5ecef}.ganttRow{display:contents}.row button{margin-left:8px;padding:6px 9px}
+
+.bp54Workspace{min-height:100vh;background:#f4f8fa;padding:28px 34px;color:#26333a}.bp54ProjectHead{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:18px;margin-bottom:18px}.bp54ProjectHead h1{margin:3px 0}.bp54ProgressCircle{width:74px;height:74px;border:8px solid #dceef5;border-top-color:#40a2d1;border-right-color:#40a2d1;border-radius:50%;display:grid;place-items:center;color:#247fa9;font-weight:900}.bp54Tabs{display:flex;gap:4px;border-bottom:1px solid #dbe5e9;margin-bottom:16px;overflow:auto}.bp54Tabs button{border:0;background:none;padding:11px 13px;color:#61757f;white-space:nowrap;cursor:pointer}.bp54Tabs button.active{color:#2388b8;border-bottom:3px solid #40a2d1;font-weight:800}.bp54PhaseRibbon{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}.bp54PhaseRibbon article{background:#eef5f8;border-radius:9px;padding:10px}.bp54PhaseRibbon article.done{background:#dcf3e7}.bp54PhaseRibbon b,.bp54PhaseRibbon small,.bp54PhaseRibbon span{display:block}.bp54PhaseRibbon small{font-size:9px;color:#6f8188;min-height:28px}.bp54PhaseRibbon span{font-size:10px;color:#2983ad;margin-top:5px}.bp54PhaseList>div,.bp54Gantt>div{display:grid;grid-template-columns:65px 2fr 2fr 55px;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #e8eef1}.bp54PhaseList small{display:block;color:#74858c}.bp54Gantt>div{grid-template-columns:1.5fr 1.6fr 2fr 1.5fr 45px}.bp54Gantt>div>span{height:9px;background:#e6eef1;border-radius:99px;overflow:hidden}.bp54Gantt>div>span i{height:100%;display:block;background:#40a2d1}.bp54TaskTable{display:grid;grid-template-columns:2fr 1fr 1.5fr 1fr;gap:1px;background:#e4ecef}.bp54TaskTable>*{background:#fff;padding:9px}.bp54TaskTable .contents{display:contents}.bp54TaskTable select{border:1px solid #d2dfe4;border-radius:6px;padding:6px;background:#fff}@media(max-width:900px){.bp54PhaseRibbon{grid-template-columns:repeat(3,1fr)}.bp54TaskTable{grid-template-columns:1fr}.bp54TaskTable .contents{display:contents}.bp54ProjectHead{grid-template-columns:1fr auto}.bp54ProjectHead>.outline{grid-column:1/-1;width:max-content}}@media(max-width:600px){.bp54Workspace{padding:18px}.bp54PhaseRibbon{grid-template-columns:repeat(2,1fr)}.bp54PhaseList>div,.bp54Gantt>div{grid-template-columns:1fr}.bp54ProgressCircle{width:62px;height:62px}}
+/* BatiPilot V5.2 - mire premium */
+.bpLogin{min-height:100vh;display:grid;grid-template-columns:minmax(480px,1.08fr) minmax(520px,.92fr);background:#f7fbfd;color:#172431}.bpLoginVisual{position:relative;padding:58px 7vw 48px;overflow:hidden;color:#fff;background:linear-gradient(140deg,#122531 0%,#173b50 42%,#0a1720 100%)}.bpLoginVisual:after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 80% 45%,#40a2d133,transparent 34%),linear-gradient(115deg,transparent 60%,#ffffff08 60%);pointer-events:none}.bpLoginShade{position:absolute;right:-10%;bottom:-12%;width:62%;height:54%;border:1px solid #40a2d133;transform:skew(-12deg);background:linear-gradient(135deg,#40a2d115,transparent)}.bpLoginBrand{display:flex;gap:15px;align-items:center;position:relative;z-index:1}.bpLoginBrand img{width:74px;height:74px;object-fit:contain;border-radius:14px;background:#fff}.bpLoginBrand b{font-size:38px;letter-spacing:-2px}.bpLoginBrand b span,.bpLoginPitch h1 span,.bpLoginCard h2 span{color:#40a2d1}.bpLoginBrand small{display:block;color:#b9cbd4;letter-spacing:4px;font-size:10px}.bpLoginPitch{position:relative;z-index:1;max-width:600px;margin-top:70px}.bpLoginPitch h1{font-size:48px;line-height:1.08;margin:0 0 25px;letter-spacing:-1.5px}.bpLoginPitch>p{max-width:530px;color:#c4d5dd;line-height:1.55;font-size:17px}.bpLoginPitch ul{list-style:none;padding:0;margin:35px 0 0}.bpLoginPitch li{display:flex;gap:16px;align-items:center;margin:18px 0}.bpLoginPitch li>i{width:48px;height:48px;display:grid;place-items:center;border-radius:50%;font-style:normal;font-weight:800;color:#45b5e9;background:#123d56;border:1px solid #2e6683}.bpLoginPitch li b{display:block;font-size:16px}.bpLoginPitch li small{display:block;color:#aec4cf;margin-top:3px}.bpLoginSignature{position:absolute;z-index:1;bottom:42px;left:7vw;font-size:23px;font-style:italic;color:#fff;transform:rotate(-4deg)}.bpLoginFormSide{position:relative;display:grid;place-items:center;padding:70px 7vw 85px;background:radial-gradient(circle at 90% 80%,#40a2d10c,transparent 35%),#f9fcfd}.bpLang{position:absolute;right:7vw;top:30px;font-size:14px}.bpLoginCard{width:min(560px,100%);background:#fff;border:1px solid #e6eff3;border-radius:22px;padding:45px 50px;box-shadow:0 20px 65px #173b5014}.bpLoginCard h2{font-size:32px;margin:0 0 8px;letter-spacing:-1px}.bpLoginCard>p{margin:0 0 32px;color:#6e7d85}.bpLoginCard>label{display:block;font-size:13px;font-weight:800;margin:20px 0}.bpInput{display:flex;align-items:center;height:52px;border:1px solid #cbd9df;border-radius:9px;margin-top:7px;padding:0 13px;transition:.2s}.bpInput:focus-within{border-color:#40a2d1;box-shadow:0 0 0 3px #40a2d118}.bpInput>i{font-style:normal;width:25px;color:#607784}.bpInput input{border:0;outline:0;flex:1;font:inherit;padding:0 6px;background:transparent}.bpEye,.bpLink{border:0;background:none;color:#2387b8;cursor:pointer}.bpLoginOptions{display:flex;justify-content:space-between;align-items:center;font-size:13px;margin:4px 0 22px}.bpRemember{display:flex;align-items:center;gap:8px}.bpRemember input{width:17px;height:17px;accent-color:#40a2d1}.bpLoginError{background:#fff1f1;border:1px solid #f2caca;color:#943535;padding:10px 12px;border-radius:8px;margin-bottom:14px;font-size:13px}.bpLoginSubmit{width:100%;height:54px;border:0;border-radius:9px;color:#fff;background:linear-gradient(90deg,#2698d0,#40a2d1);font-weight:800;font-size:15px;cursor:pointer}.bpLoginSubmit:disabled{opacity:.65;cursor:wait}.bpSecurity{margin-top:27px;padding:16px;border-radius:10px;background:#eff8fc;color:#1c506b}.bpSecurity b,.bpSecurity small{display:block}.bpSecurity small{margin-top:6px;color:#697e89}.bpLoginFormSide footer{position:absolute;bottom:26px;text-align:center;color:#637680;font-size:12px}.bpLoginFormSide footer small{display:block;margin-top:9px}@media(max-width:950px){.bpLogin{grid-template-columns:1fr}.bpLoginVisual{display:none}.bpLoginFormSide{min-height:100vh;padding:80px 22px}.bpLoginCard{padding:34px 28px}.bpLang{right:24px}.bpLoginFormSide footer{position:static;margin-top:24px}}@media(max-width:480px){.bpLoginCard h2{font-size:26px}.bpLoginOptions{align-items:flex-start;gap:12px;flex-direction:column}.bpLoginCard{box-shadow:none;border-radius:15px;padding:28px 21px}}
+
+.v55Work{min-height:100vh;background:#f4f8fa;padding:28px 34px;color:#26333a}.v55Work>header{display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center}.v55Work h1{margin:3px 0}.v55Circle{width:74px;height:74px;border:8px solid #dceef5;border-right-color:#40a2d1;border-top-color:#40a2d1;border-radius:50%;display:grid;place-items:center;color:#2787b2}.v55Tabs{display:flex;overflow:auto;border-bottom:1px solid #dbe5e9;margin:18px 0}.v55Tabs button{border:0;background:none;padding:11px 13px;color:#687b84;white-space:nowrap}.v55Tabs button.active{color:#268abb;border-bottom:3px solid #40a2d1;font-weight:800}.v55Ribbon{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}.v55Ribbon article{padding:10px;background:#edf5f8;border-radius:9px}.v55Ribbon article.done{background:#dcf3e7}.v55Ribbon b,.v55Ribbon small,.v55Ribbon span{display:block}.v55Ribbon small{min-height:28px;color:#72838b;font-size:9px}.v55Phase>div{display:grid;grid-template-columns:65px 2fr 2fr 55px;gap:12px;align-items:center;padding:10px;border-bottom:1px solid #e8eef1}.v55Phase small{display:block;color:#74858c}.v55Gantt>div{display:grid;grid-template-columns:1.4fr 1.5fr 2fr 1fr 1.4fr 45px;gap:10px;align-items:center;padding:10px;border-bottom:1px solid #e8eef1}.v55Gantt b small{display:block;color:#40a2d1}.v55Gantt>div>i{height:9px;background:#e5edf1;border-radius:99px;overflow:hidden}.v55Gantt>div>i em{display:block;height:100%;background:#40a2d1}.v55Task{display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr .7fr;gap:1px;background:#e6edef}.v55Task>*{background:#fff;padding:8px}.v55Task .contents{display:contents}.v55Task select{border:1px solid #d4e0e5;border-radius:6px;padding:6px}.v55Filters{display:flex;gap:8px;margin-bottom:12px}.v55Filters select{padding:9px;border:1px solid #d3dfe4;border-radius:7px;background:#fff}.v55Capacity>div{display:grid;grid-template-columns:180px 1fr 150px;gap:12px;align-items:center;padding:9px 0}.v55Capacity span{height:10px;background:#e5edf1;border-radius:99px;overflow:hidden}.v55Capacity span i{display:block;height:100%;border-radius:99px}.v55Capacity em{font-style:normal;color:#6d7d85;font-size:11px}@media(max-width:900px){.v55Ribbon{grid-template-columns:repeat(3,1fr)}.v55Task{grid-template-columns:1fr}.v55Task .contents{display:contents}.v55Gantt>div,.v55Phase>div{grid-template-columns:1fr}.v55Capacity>div{grid-template-columns:1fr}.v55Work{padding:18px}}@media(max-width:550px){.v55Ribbon{grid-template-columns:repeat(2,1fr)}.v55Filters{flex-direction:column}}
+
+
+===== FILE: app\style.css =====
+:root{--b:#40a2d1;--d:#262223;--bg:#f4f8fa;--l:#dfe8ec;--m:#71808a}*{box-sizing:border-box}body{margin:0;font-family:Inter,Segoe UI,Arial;color:#26323a;background:var(--bg)}button,select{font:inherit}.shell{display:grid;grid-template-columns:240px 1fr;min-height:100vh}aside{background:var(--d);color:white;padding:22px 16px}.brand{display:flex;align-items:center;gap:10px;margin-bottom:22px}.brand img{width:53px;border-radius:13px}.brand b{display:block;color:var(--b);font-size:21px}.brand small{color:#cbd3d6}aside select{width:100%;padding:9px;border-radius:8px;margin-bottom:14px}nav button{display:flex;gap:10px;width:100%;border:0;background:none;color:white;padding:10px 12px;border-radius:8px;text-align:left;cursor:pointer;margin:2px 0}nav button.active,nav button:hover{background:var(--b)}nav i{width:19px;font-style:normal}main{padding:30px 36px;overflow:hidden}header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}header h1{margin:4px 0;font-size:29px}header small,.row small,.kanban small{display:block;color:var(--m)}header button,.docs button{border:0;background:var(--b);color:#fff;padding:10px 15px;border-radius:8px;font-weight:700;margin-left:8px}.outline{background:white!important;color:var(--b)!important;border:1px solid var(--b)!important}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:14px}.cards article,.panel{background:white;border:1px solid var(--l);border-radius:14px;padding:17px;box-shadow:0 3px 12px #2030400b}.cards strong{display:block;color:var(--b);font-size:26px;margin-top:6px}.panel{margin-top:14px}.panel h2{margin:0 0 12px;font-size:18px}.row{display:flex;justify-content:space-between;align-items:center;padding:12px 2px;border-top:1px solid #edf1f3}.row:first-child{border-top:0}.row span{background:#edf7fb;color:#267ca5;border-radius:99px;padding:5px 9px;font-size:12px;font-weight:700}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px 8px;border-bottom:1px solid #e8eef1}th{font-size:11px;color:var(--m);text-transform:uppercase}.gantt{display:grid;grid-template-columns:170px repeat(8,minmax(42px,1fr)) 55px;overflow:auto;font-size:11px}.gantt>*{padding:9px 5px;border-bottom:1px solid #edf1f3}.gantt .bar{background:var(--b);margin:4px 2px;padding:5px;border-radius:4px}.gantt em{font-style:normal;font-weight:700}.kanban{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}.kanban section{background:#edf2f4;border-radius:12px;padding:12px}.kanban article{background:white;border:1px solid var(--l);border-radius:10px;padding:12px;margin:9px 0}.kanban article span{display:inline-block;margin-top:12px;color:#a56516;background:#fff0dc;padding:4px 7px;border-radius:99px;font-size:11px}.docs{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.docs article{border:1px solid var(--l);border-radius:11px;padding:14px}.docs article>b{font-size:25px;color:var(--b)}.hero{background:linear-gradient(120deg,var(--d),#35515f);color:white;padding:25px;border-radius:16px;display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.hero strong{font-size:42px;color:#7bd0f5}@media(max-width:900px){.shell{grid-template-columns:1fr}aside{display:none}main{padding:18px}.cards{grid-template-columns:repeat(2,1fr)}.kanban,.docs{grid-template-columns:1fr}header{align-items:flex-start;gap:10px}}
+/* Copier à la fin de app/style.css */
+.modal{position:fixed;inset:0;background:#14263199;display:grid;place-items:center;z-index:20;padding:20px}.form{width:650px;max-width:95vw;max-height:90vh;overflow:auto}.form label{display:block;font-weight:700;font-size:13px;margin:11px 0}.form input,.form select,.form textarea{display:block;width:100%;padding:10px;border:1px solid #cad8df;border-radius:8px;margin-top:5px}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}.error{background:#fee;color:#922;padding:10px;border-radius:8px}.block{padding:13px;border-bottom:1px solid #e5ecef}.block>span{float:right}.ganttApi{display:grid;grid-template-columns:2fr 1fr 1fr 2fr;gap:4px}.ganttApi>b,.ganttRow>*{padding:10px;border-bottom:1px solid #e5ecef}.ganttRow{display:contents}.row button{margin-left:8px;padding:6px 9px}
+
+.bp54Workspace{min-height:100vh;background:#f4f8fa;padding:28px 34px;color:#26333a}.bp54ProjectHead{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:18px;margin-bottom:18px}.bp54ProjectHead h1{margin:3px 0}.bp54ProgressCircle{width:74px;height:74px;border:8px solid #dceef5;border-top-color:#40a2d1;border-right-color:#40a2d1;border-radius:50%;display:grid;place-items:center;color:#247fa9;font-weight:900}.bp54Tabs{display:flex;gap:4px;border-bottom:1px solid #dbe5e9;margin-bottom:16px;overflow:auto}.bp54Tabs button{border:0;background:none;padding:11px 13px;color:#61757f;white-space:nowrap;cursor:pointer}.bp54Tabs button.active{color:#2388b8;border-bottom:3px solid #40a2d1;font-weight:800}.bp54PhaseRibbon{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}.bp54PhaseRibbon article{background:#eef5f8;border-radius:9px;padding:10px}.bp54PhaseRibbon article.done{background:#dcf3e7}.bp54PhaseRibbon b,.bp54PhaseRibbon small,.bp54PhaseRibbon span{display:block}.bp54PhaseRibbon small{font-size:9px;color:#6f8188;min-height:28px}.bp54PhaseRibbon span{font-size:10px;color:#2983ad;margin-top:5px}.bp54PhaseList>div,.bp54Gantt>div{display:grid;grid-template-columns:65px 2fr 2fr 55px;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #e8eef1}.bp54PhaseList small{display:block;color:#74858c}.bp54Gantt>div{grid-template-columns:1.5fr 1.6fr 2fr 1.5fr 45px}.bp54Gantt>div>span{height:9px;background:#e6eef1;border-radius:99px;overflow:hidden}.bp54Gantt>div>span i{height:100%;display:block;background:#40a2d1}.bp54TaskTable{display:grid;grid-template-columns:2fr 1fr 1.5fr 1fr;gap:1px;background:#e4ecef}.bp54TaskTable>*{background:#fff;padding:9px}.bp54TaskTable .contents{display:contents}.bp54TaskTable select{border:1px solid #d2dfe4;border-radius:6px;padding:6px;background:#fff}@media(max-width:900px){.bp54PhaseRibbon{grid-template-columns:repeat(3,1fr)}.bp54TaskTable{grid-template-columns:1fr}.bp54TaskTable .contents{display:contents}.bp54ProjectHead{grid-template-columns:1fr auto}.bp54ProjectHead>.outline{grid-column:1/-1;width:max-content}}@media(max-width:600px){.bp54Workspace{padding:18px}.bp54PhaseRibbon{grid-template-columns:repeat(2,1fr)}.bp54PhaseList>div,.bp54Gantt>div{grid-template-columns:1fr}.bp54ProgressCircle{width:62px;height:62px}}
+/* BatiPilot V5.2 - mire premium */
+.bpLogin{min-height:100vh;display:grid;grid-template-columns:minmax(480px,1.08fr) minmax(520px,.92fr);background:#f7fbfd;color:#172431}.bpLoginVisual{position:relative;padding:58px 7vw 48px;overflow:hidden;color:#fff;background:linear-gradient(140deg,#122531 0%,#173b50 42%,#0a1720 100%)}.bpLoginVisual:after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 80% 45%,#40a2d133,transparent 34%),linear-gradient(115deg,transparent 60%,#ffffff08 60%);pointer-events:none}.bpLoginShade{position:absolute;right:-10%;bottom:-12%;width:62%;height:54%;border:1px solid #40a2d133;transform:skew(-12deg);background:linear-gradient(135deg,#40a2d115,transparent)}.bpLoginBrand{display:flex;gap:15px;align-items:center;position:relative;z-index:1}.bpLoginBrand img{width:74px;height:74px;object-fit:contain;border-radius:14px;background:#fff}.bpLoginBrand b{font-size:38px;letter-spacing:-2px}.bpLoginBrand b span,.bpLoginPitch h1 span,.bpLoginCard h2 span{color:#40a2d1}.bpLoginBrand small{display:block;color:#b9cbd4;letter-spacing:4px;font-size:10px}.bpLoginPitch{position:relative;z-index:1;max-width:600px;margin-top:70px}.bpLoginPitch h1{font-size:48px;line-height:1.08;margin:0 0 25px;letter-spacing:-1.5px}.bpLoginPitch>p{max-width:530px;color:#c4d5dd;line-height:1.55;font-size:17px}.bpLoginPitch ul{list-style:none;padding:0;margin:35px 0 0}.bpLoginPitch li{display:flex;gap:16px;align-items:center;margin:18px 0}.bpLoginPitch li>i{width:48px;height:48px;display:grid;place-items:center;border-radius:50%;font-style:normal;font-weight:800;color:#45b5e9;background:#123d56;border:1px solid #2e6683}.bpLoginPitch li b{display:block;font-size:16px}.bpLoginPitch li small{display:block;color:#aec4cf;margin-top:3px}.bpLoginSignature{position:absolute;z-index:1;bottom:42px;left:7vw;font-size:23px;font-style:italic;color:#fff;transform:rotate(-4deg)}.bpLoginFormSide{position:relative;display:grid;place-items:center;padding:70px 7vw 85px;background:radial-gradient(circle at 90% 80%,#40a2d10c,transparent 35%),#f9fcfd}.bpLang{position:absolute;right:7vw;top:30px;font-size:14px}.bpLoginCard{width:min(560px,100%);background:#fff;border:1px solid #e6eff3;border-radius:22px;padding:45px 50px;box-shadow:0 20px 65px #173b5014}.bpLoginCard h2{font-size:32px;margin:0 0 8px;letter-spacing:-1px}.bpLoginCard>p{margin:0 0 32px;color:#6e7d85}.bpLoginCard>label{display:block;font-size:13px;font-weight:800;margin:20px 0}.bpInput{display:flex;align-items:center;height:52px;border:1px solid #cbd9df;border-radius:9px;margin-top:7px;padding:0 13px;transition:.2s}.bpInput:focus-within{border-color:#40a2d1;box-shadow:0 0 0 3px #40a2d118}.bpInput>i{font-style:normal;width:25px;color:#607784}.bpInput input{border:0;outline:0;flex:1;font:inherit;padding:0 6px;background:transparent}.bpEye,.bpLink{border:0;background:none;color:#2387b8;cursor:pointer}.bpLoginOptions{display:flex;justify-content:space-between;align-items:center;font-size:13px;margin:4px 0 22px}.bpRemember{display:flex;align-items:center;gap:8px}.bpRemember input{width:17px;height:17px;accent-color:#40a2d1}.bpLoginError{background:#fff1f1;border:1px solid #f2caca;color:#943535;padding:10px 12px;border-radius:8px;margin-bottom:14px;font-size:13px}.bpLoginSubmit{width:100%;height:54px;border:0;border-radius:9px;color:#fff;background:linear-gradient(90deg,#2698d0,#40a2d1);font-weight:800;font-size:15px;cursor:pointer}.bpLoginSubmit:disabled{opacity:.65;cursor:wait}.bpSecurity{margin-top:27px;padding:16px;border-radius:10px;background:#eff8fc;color:#1c506b}.bpSecurity b,.bpSecurity small{display:block}.bpSecurity small{margin-top:6px;color:#697e89}.bpLoginFormSide footer{position:absolute;bottom:26px;text-align:center;color:#637680;font-size:12px}.bpLoginFormSide footer small{display:block;margin-top:9px}@media(max-width:950px){.bpLogin{grid-template-columns:1fr}.bpLoginVisual{display:none}.bpLoginFormSide{min-height:100vh;padding:80px 22px}.bpLoginCard{padding:34px 28px}.bpLang{right:24px}.bpLoginFormSide footer{position:static;margin-top:24px}}@media(max-width:480px){.bpLoginCard h2{font-size:26px}.bpLoginOptions{align-items:flex-start;gap:12px;flex-direction:column}.bpLoginCard{box-shadow:none;border-radius:15px;padding:28px 21px}}
+
+.v55Work{min-height:100vh;background:#f4f8fa;padding:28px 34px;color:#26333a}.v55Work>header{display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center}.v55Work h1{margin:3px 0}.v55Circle{width:74px;height:74px;border:8px solid #dceef5;border-right-color:#40a2d1;border-top-color:#40a2d1;border-radius:50%;display:grid;place-items:center;color:#2787b2}.v55Tabs{display:flex;overflow:auto;border-bottom:1px solid #dbe5e9;margin:18px 0}.v55Tabs button{border:0;background:none;padding:11px 13px;color:#687b84;white-space:nowrap}.v55Tabs button.active{color:#268abb;border-bottom:3px solid #40a2d1;font-weight:800}.v55Ribbon{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}.v55Ribbon article{padding:10px;background:#edf5f8;border-radius:9px}.v55Ribbon article.done{background:#dcf3e7}.v55Ribbon b,.v55Ribbon small,.v55Ribbon span{display:block}.v55Ribbon small{min-height:28px;color:#72838b;font-size:9px}.v55Phase>div{display:grid;grid-template-columns:65px 2fr 2fr 55px;gap:12px;align-items:center;padding:10px;border-bottom:1px solid #e8eef1}.v55Phase small{display:block;color:#74858c}.v55Gantt>div{display:grid;grid-template-columns:1.4fr 1.5fr 2fr 1fr 1.4fr 45px;gap:10px;align-items:center;padding:10px;border-bottom:1px solid #e8eef1}.v55Gantt b small{display:block;color:#40a2d1}.v55Gantt>div>i{height:9px;background:#e5edf1;border-radius:99px;overflow:hidden}.v55Gantt>div>i em{display:block;height:100%;background:#40a2d1}.v55Task{display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr .7fr;gap:1px;background:#e6edef}.v55Task>*{background:#fff;padding:8px}.v55Task .contents{display:contents}.v55Task select{border:1px solid #d4e0e5;border-radius:6px;padding:6px}.v55Filters{display:flex;gap:8px;margin-bottom:12px}.v55Filters select{padding:9px;border:1px solid #d3dfe4;border-radius:7px;background:#fff}.v55Capacity>div{display:grid;grid-template-columns:180px 1fr 150px;gap:12px;align-items:center;padding:9px 0}.v55Capacity span{height:10px;background:#e5edf1;border-radius:99px;overflow:hidden}.v55Capacity span i{display:block;height:100%;border-radius:99px}.v55Capacity em{font-style:normal;color:#6d7d85;font-size:11px}@media(max-width:900px){.v55Ribbon{grid-template-columns:repeat(3,1fr)}.v55Task{grid-template-columns:1fr}.v55Task .contents{display:contents}.v55Gantt>div,.v55Phase>div{grid-template-columns:1fr}.v55Capacity>div{grid-template-columns:1fr}.v55Work{padding:18px}}@media(max-width:550px){.v55Ribbon{grid-template-columns:repeat(2,1fr)}.v55Filters{flex-direction:column}}
+
+/* BatiPilot V5.3 Interior Premium */
+:root{--bp-blue:#40a2d1;--bp-dark:#18242c;--bp-side:#1d2931;--bp-bg:#f4f8fa;--bp-line:#e1eaee;--bp-text:#26333a;--bp-muted:#73838c}.bp53Shell{display:grid;grid-template-columns:250px 1fr;min-height:100vh;background:var(--bp-bg);color:var(--bp-text)}.bp53Side{background:linear-gradient(180deg,#1c2931,#131d23);padding:24px 16px;color:#fff;display:flex;flex-direction:column;min-height:100vh}.bp53Brand{display:flex;align-items:center;gap:11px;padding:0 7px 22px;border-bottom:1px solid #ffffff14}.bp53Brand img{width:49px;height:49px;object-fit:contain;border-radius:11px;background:#fff}.bp53Brand b{font-size:21px}.bp53Brand b span{color:var(--bp-blue)}.bp53Brand small{display:block;color:#90a7b3;font-size:7px;letter-spacing:1.7px;margin-top:2px}.bp53Org{display:flex;align-items:center;gap:10px;padding:15px 7px}.bp53Org>i{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#244d61;color:#55bcec;font-style:normal;font-weight:900}.bp53Org b{display:block;font-size:12px}.bp53Org small{color:#879ca6;font-size:10px}.bp53Side nav{flex:1}.bp53Side nav button,.bp53SideFoot button{width:100%;display:flex;align-items:center;gap:10px;border:0;color:#c5d1d7;background:none;padding:9px 11px;border-radius:8px;margin:2px 0;text-align:left;cursor:pointer;font-size:12px}.bp53Side nav button i{width:19px;font-style:normal;color:#70badc}.bp53Side nav button em{margin-left:auto;background:#bd4a43;color:#fff;padding:1px 6px;border-radius:99px;font-style:normal;font-size:9px}.bp53Side nav button.active,.bp53Side nav button:hover{background:#40a2d120;color:#fff}.bp53Side nav button.active{border-left:3px solid var(--bp-blue)}.bp53SideFoot{padding-top:12px;border-top:1px solid #ffffff14}.bp53SideFoot small{display:block;text-align:center;color:#657983;font-size:9px}.bp53Main{padding:27px 33px;min-width:0}.bp53Header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.bp53Header small{color:var(--bp-muted);font-size:11px}.bp53Header h1{font-size:26px;margin:4px 0}.bp53HeaderActions{display:flex;gap:7px}.bp53HeaderActions button,.bp53Panel button,.bp53Modal button,.bp53Row button,.bp53Project button{border:0;background:var(--bp-blue);color:#fff;padding:9px 12px;border-radius:8px;font-weight:700;cursor:pointer;font-size:11px}.bp53HeaderActions .bp53Icon,.bp53HeaderActions .outline,.bp53Modal .outline{background:#fff;color:#52646e;border:1px solid var(--bp-line)}.bp53Hero{height:225px;border-radius:17px;overflow:hidden;position:relative;color:#fff;background:#172732;margin-bottom:14px}.bp53Hero>div{position:absolute;z-index:2;left:28px;top:35px;width:45%}.bp53Hero h2{font-size:27px;margin:5px 0 9px}.bp53Hero p{color:#c7d6dc;line-height:1.5}.bp53Hero img{position:absolute;right:0;width:58%;height:100%;object-fit:cover;opacity:.68;mask-image:linear-gradient(90deg,transparent,#000 35%)}.bp53Kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}.bp53Kpis article{display:flex;align-items:center;gap:13px;background:#fff;border:1px solid var(--bp-line);border-radius:12px;padding:14px}.bp53Kpis article>i{width:42px;height:42px;display:grid;place-items:center;border-radius:10px;background:#eaf6fb;color:var(--bp-blue);font-style:normal;font-weight:900}.bp53Kpis small{display:block;color:var(--bp-muted);font-size:10px}.bp53Kpis strong{font-size:23px}.bp53Grid{display:grid;grid-template-columns:1.45fr 1fr;gap:13px}.bp53Panel{background:#fff;border:1px solid var(--bp-line);border-radius:13px;padding:16px;margin-bottom:13px}.bp53Panel>header{display:flex;align-items:center;justify-content:space-between;margin:0 0 7px}.bp53Panel h2{font-size:15px;margin:0}.bp53Panel>header button{background:none;color:var(--bp-blue);padding:5px}.bp53Rows{display:grid}.bp53Row{display:grid;grid-template-columns:36px 1fr auto auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid #edf1f3}.bp53Row:first-child{border-top:0}.bp53RowIcon{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;background:#eef7fa;color:#2c91c2;font-weight:800}.bp53Row b{font-size:12px}.bp53Row small{display:block;color:var(--bp-muted);font-size:10px;margin-top:2px}.bp53Row>span{font-size:10px;border-radius:99px;padding:4px 7px;background:#edf7fb;color:#247aa3}.bp53ProjectGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}.bp53Project{background:#fff;border:1px solid var(--bp-line);border-radius:13px;padding:16px}.bp53ProjectTop{display:flex;justify-content:space-between}.bp53ProjectTop span{font-size:9px;color:#247aa3;background:#e8f6fb;border-radius:99px;padding:4px 7px}.bp53Project h3{font-size:16px;margin:14px 0 3px}.bp53Project p{font-size:10px;color:var(--bp-muted)}.bp53Progress{height:7px;background:#eaf0f2;border-radius:99px;overflow:hidden}.bp53Progress i{height:100%;display:block;background:var(--bp-blue);border-radius:99px}.bp53Project footer{display:flex;justify-content:space-between;align-items:center;margin-top:14px}.bp53Project footer small{color:var(--bp-muted)}.bp53Project footer button{background:none;color:var(--bp-blue);padding:3px}.bp53Kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:11px}.bp53Kanban>section{background:#eaf0f3;border-radius:12px;padding:11px;min-height:430px}.bp53Kanban h3{font-size:11px;color:#546871}.bp53Kanban h3 em{float:right;background:#fff;border-radius:99px;padding:2px 6px;font-style:normal}.bp53Kanban article{background:#fff;border:1px solid var(--bp-line);border-radius:9px;padding:11px;margin:8px 0}.bp53Kanban article b,.bp53Kanban article small{display:block}.bp53Kanban article b{font-size:11px}.bp53Kanban article small{font-size:9px;color:var(--bp-muted);margin:4px 0 9px}.bp53Kanban select{width:100%;padding:6px;border:1px solid var(--bp-line);border-radius:6px;font-size:9px}.bp53Gantt>div{display:grid;grid-template-columns:1.4fr 1.6fr 2fr 1.7fr 45px;gap:10px;align-items:center;padding:10px 0;border-top:1px solid #edf1f3;font-size:10px}.bp53Gantt>div>span{height:9px;background:#e6eef1;border-radius:99px;overflow:hidden}.bp53Gantt>div>span i{display:block;background:var(--bp-blue);height:100%}.bp53ClientHero{background:linear-gradient(110deg,#1a2c36,#26556b);border-radius:15px;color:#fff;padding:28px;margin-bottom:14px}.bp53ClientHero h2{margin:6px 0}.bp53Intro{color:var(--bp-muted)}.bp53Modal{position:fixed;inset:0;background:#142631a8;z-index:50;display:grid;place-items:center;padding:20px}.bp53Modal form{width:600px;max-width:95vw;max-height:92vh;overflow:auto;background:#fff;border-radius:15px;padding:22px;box-shadow:0 30px 90px #0004}.bp53ModalTitle{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--bp-line);padding-bottom:12px}.bp53ModalTitle h2{margin:3px 0}.bp53ModalTitle>button{background:none;color:#667;font-size:20px}.bp53Modal label{display:block;font-size:11px;font-weight:800;margin:13px 0}.bp53Modal input,.bp53Modal select,.bp53Modal textarea{display:block;width:100%;padding:10px;border:1px solid #cad8df;border-radius:7px;margin-top:5px}.bp53Modal footer{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.bp53Error{background:#fff0f0;color:#922;padding:10px;border-radius:8px;margin-bottom:12px}.bp53Loader{min-height:100vh;display:grid;place-items:center;background:#f4f8fa;color:#40a2d1;font-weight:800}@media(max-width:1100px){.bp53ProjectGrid{grid-template-columns:repeat(2,1fr)}.bp53Kpis{grid-template-columns:repeat(2,1fr)}.bp53Kanban{grid-template-columns:repeat(2,1fr)}}@media(max-width:760px){.bp53Shell{grid-template-columns:1fr}.bp53Side{display:none}.bp53Main{padding:18px}.bp53Grid,.bp53ProjectGrid,.bp53Kpis,.bp53Kanban{grid-template-columns:1fr}.bp53Hero{height:240px}.bp53Hero>div{width:80%;left:20px}.bp53Header{align-items:flex-start;gap:10px}.bp53HeaderActions .bp53Icon{display:none}}
+
+
+/* V5.5 additions */
+.v55Work{min-height:100vh;background:#f4f8fa;padding:28px 34px;color:#26333a}.v55Work>header{display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center}.v55Work h1{margin:3px 0}.v55Circle{width:74px;height:74px;border:8px solid #dceef5;border-right-color:#40a2d1;border-top-color:#40a2d1;border-radius:50%;display:grid;place-items:center;color:#2787b2}.v55Tabs{display:flex;overflow:auto;border-bottom:1px solid #dbe5e9;margin:18px 0}.v55Tabs button{border:0;background:none;padding:11px 13px;color:#687b84;white-space:nowrap}.v55Tabs button.active{color:#268abb;border-bottom:3px solid #40a2d1;font-weight:800}.v55Ribbon{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}.v55Ribbon article{padding:10px;background:#edf5f8;border-radius:9px}.v55Ribbon article.done{background:#dcf3e7}.v55Ribbon b,.v55Ribbon small,.v55Ribbon span{display:block}.v55Ribbon small{min-height:28px;color:#72838b;font-size:9px}.v55Phase>div{display:grid;grid-template-columns:65px 2fr 2fr 55px;gap:12px;align-items:center;padding:10px;border-bottom:1px solid #e8eef1}.v55Phase small{display:block;color:#74858c}.v55Gantt>div{display:grid;grid-template-columns:1.4fr 1.5fr 2fr 1fr 1.4fr 45px;gap:10px;align-items:center;padding:10px;border-bottom:1px solid #e8eef1}.v55Gantt b small{display:block;color:#40a2d1}.v55Gantt>div>i{height:9px;background:#e5edf1;border-radius:99px;overflow:hidden}.v55Gantt>div>i em{display:block;height:100%;background:#40a2d1}.v55Task{display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr .7fr;gap:1px;background:#e6edef}.v55Task>*{background:#fff;padding:8px}.v55Task .contents{display:contents}.v55Task select{border:1px solid #d4e0e5;border-radius:6px;padding:6px}.v55Filters{display:flex;gap:8px;margin-bottom:12px}.v55Filters select{padding:9px;border:1px solid #d3dfe4;border-radius:7px;background:#fff}.v55Capacity>div{display:grid;grid-template-columns:180px 1fr 150px;gap:12px;align-items:center;padding:9px 0}.v55Capacity span{height:10px;background:#e5edf1;border-radius:99px;overflow:hidden}.v55Capacity span i{display:block;height:100%;border-radius:99px}.v55Capacity em{font-style:normal;color:#6d7d85;font-size:11px}@media(max-width:900px){.v55Ribbon{grid-template-columns:repeat(3,1fr)}.v55Task{grid-template-columns:1fr}.v55Task .contents{display:contents}.v55Gantt>div,.v55Phase>div{grid-template-columns:1fr}.v55Capacity>div{grid-template-columns:1fr}.v55Work{padding:18px}}@media(max-width:550px){.v55Ribbon{grid-template-columns:repeat(2,1fr)}.v55Filters{flex-direction:column}}
+
+
+===== FILE: components\BatiPilotApp.tsx =====
+'use client';
+
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { modules } from '@/lib/modules';
+import ProjectWorkspace from './ProjectWorkspace';
+
+type Any = Record<string, any>;
+type Role = 'ADMIN' | 'PROJECT_MANAGER' | 'COLLABORATOR' | 'CLIENT' | 'COMPANY';
+
+const endpoints: Record<string, string> = {
+  projects: 'projects',
+  tasks: 'tasks',
+  clients: 'clients',
+  companies: 'companies',
+  gantt: 'planning',
+  site: 'observations',
+  documents: 'documents',
+  signatures: 'signatures',
+  finance: 'budgets',
+  reception: 'receptions',
+  admin: 'users',
+};
+
+async function request(url: string, options?: RequestInit) {
+  const response = await fetch(url, { cache: 'no-store', ...options });
+  if (response.status === 401) {
+    location.href = '/login';
+    throw new Error('Session expirée');
+  }
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || 'Erreur API');
+  return body;
+}
+
+const send = (url: string, method: string, body: Any) =>
+  request(url, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+export default function App() {
+  const [user, setUser] = useState<Any | null>(null);
+  const [page, setPage] = useState('dashboard');
+  const [data, setData] = useState<Record<string, Any>>({});
+  const [modal, setModal] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [openProject, setOpenProject] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setError('');
+    try {
+      const me = await request('/api/me');
+      setUser(me.user);
+      const entries = await Promise.all(
+        Object.entries(endpoints).map(async ([key, endpoint]) => [
+          key,
+          await request('/api/' + endpoint).catch(() => []),
+        ]),
+      );
+      const dashboard = await request('/api/dashboard').catch(() => ({}));
+      setData({ ...Object.fromEntries(entries), dashboard });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const role = (user?.role || 'COLLABORATOR') as Role;
+  const allowed = useMemo(() => modules.filter((m) => m.roles.includes(role)), [role]);
+
+  useEffect(() => {
+    if (allowed.length && !allowed.some((m) => m.id === page)) setPage(allowed[0].id);
+  }, [allowed, page]);
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!modal) return;
+    try {
+      const body = Object.fromEntries(new FormData(e.currentTarget));
+      await send('/api/' + endpoints[modal], 'POST', body);
+      setModal(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function update(url: string, body: Any) {
+    try {
+      await send(url, 'PATCH', body);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  if (!user && loading) return <div className="bp53Loader">BatiPilot prépare votre espace…</div>;
+
+  if (openProject) {
+    return (
+      <ProjectWorkspace
+        projectId={openProject}
+        onBack={() => {
+          setOpenProject(null);
+          load();
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="bp53Shell">
+      <aside className="bp53Side">
+        <div className="bp53Brand">
+          <img src="/logo.png" alt="BatiPilot" />
+          <div><b>Bati<span>Pilot</span></b><small>VOS PROJETS, EN TOUTE MAÎTRISE</small></div>
+        </div>
+        <div className="bp53Org"><i>{user?.name?.slice(0, 1) || 'B'}</i><div><b>{user?.name}</b><small>{labelRole(role)}</small></div></div>
+        <nav>{allowed.map((m) => <button key={m.id} className={page === m.id ? 'active' : ''} onClick={() => setPage(m.id)}><i>{m.icon}</i><span>{m.label}</span></button>)}</nav>
+        <div className="bp53SideFoot"><button onClick={async () => { await fetch('/api/auth/logout', { method: 'POST' }); location.href = '/login'; }}>↪ Déconnexion</button><small>v5.4 · Espace sécurisé</small></div>
+      </aside>
+
+      <main className="bp53Main">
+        <header className="bp53Header">
+          <div><small>Cabinet BatiPilot / {modules.find((m) => m.id === page)?.label}</small><h1>{modules.find((m) => m.id === page)?.label}</h1></div>
+          <div className="bp53HeaderActions">{endpoints[page] && page !== 'admin' && <button onClick={() => setModal(page)}>＋ Créer</button>}<button className="outline" onClick={load}>↻</button></div>
+        </header>
+        {error && <div className="bp53Error">{error}</div>}
+        {loading ? <p>Actualisation…</p> : <Content page={page} data={data} update={update} onOpenProject={setOpenProject} />}
+        {modal && <Modal type={modal} data={data} close={() => setModal(null)} submit={submit} />}
+      </main>
+    </div>
+  );
+}
+
+function Content({ page, data, update, onOpenProject }: { page: string; data: Record<string, Any>; update: (u: string, b: Any) => void; onOpenProject: (id: string) => void }) {
+  const rows = (data[page] || []) as Any[];
+  if (page === 'dashboard') {
+    const d = data.dashboard || {};
+    return <><div className="bp53Kpis">{[['Projets', d.projects || 0, '▣'], ['Tâches ouvertes', d.tasks || 0, '✓'], ['Observations', d.observations || 0, '⚑'], ['À signer', d.signatures || 0, '✎']].map((x) => <article key={String(x[0])}><i>{x[2]}</i><div><small>{x[0]}</small><strong>{x[1]}</strong></div></article>)}</div><div className="bp53Grid"><Panel title="Projets récents"><Rows rows={((data.projects || []) as Any[]).slice(0, 5)} /></Panel><Panel title="Priorités"><Rows rows={((data.tasks || []) as Any[]).slice(0, 5)} /></Panel></div></>;
+  }
+  if (page === 'projects') {
+    return <div className="bp53ProjectGrid">{rows.map((x) => <article className="bp53Project" key={x.id}><div className="bp53ProjectTop"><span>{x.status}</span><b>{x.progress || 0}%</b></div><h3>{x.name}</h3><p>{x.client?.name || 'Client à renseigner'} · {x.reference}</p><div className="bp53Progress"><i style={{ width: (x.progress || 0) + '%' }} /></div><footer><small>{x.address || 'Adresse à définir'}</small><button onClick={() => onOpenProject(x.id)}>Ouvrir →</button></footer></article>)}</div>;
+  }
+  if (page === 'tasks') {
+    return <div className="bp53Kanban">{[['TODO', 'À faire'], ['IN_PROGRESS', 'En cours'], ['BLOCKED', 'Bloquées'], ['DONE', 'Terminées']].map(([status, label]) => <section key={status}><h3>{label}<em>{rows.filter((x) => x.status === status).length}</em></h3>{rows.filter((x) => x.status === status).map((x) => <article key={x.id}><b>{x.title}</b><small>{x.project?.name}</small><select value={x.status} onChange={(e) => update('/api/tasks/' + x.id, { status: e.target.value })}><option value="TODO">À faire</option><option value="IN_PROGRESS">En cours</option><option value="BLOCKED">Bloquée</option><option value="DONE">Terminée</option></select></article>)}</section>)}</div>;
+  }
+  if (page === 'gantt') return <Panel title="Planning Gantt global"><Rows rows={rows} /></Panel>;
+  if (page === 'site') return <Panel title="Observations chantier"><Rows rows={rows} /></Panel>;
+  if (page === 'capacity') return <Panel title="Charge & capacité"><Rows rows={(data.tasks || []) as Any[]} /></Panel>;
+  if (page === 'client') return <Panel title="Mes projets"><Rows rows={(data.projects || []) as Any[]} /></Panel>;
+  if (page === 'consultations') return <Panel title="Consultations entreprises"><Rows rows={(data.companies || []) as Any[]} /></Panel>;
+  return <Panel title={modules.find((m) => m.id === page)?.label || page}><Rows rows={rows} /></Panel>;
+}
+
+function Rows({ rows }: { rows: Any[] }) {
+  return <div className="bp53Rows">{!rows.length && <p>Aucune donnée.</p>}{rows.map((x) => <div className="bp53Row" key={x.id}><div className="bp53RowIcon">{(x.name || x.title || x.email || '?').slice(0, 1)}</div><div><b>{x.name || x.title || x.label || x.email}</b><small>{[x.reference, x.project?.name, x.client?.name, x.trade, x.category, x.status].filter(Boolean).join(' · ')}</small></div><span>{x.progress !== undefined ? x.progress + '%' : x.status || ''}</span></div>)}</div>;
+}
+
+function Panel({ title, children }: { title: string; children: React.ReactNode }) { return <section className="bp53Panel"><header><h2>{title}</h2></header>{children}</section>; }
+function labelRole(r: Role) { return ({ ADMIN: 'Administrateur', PROJECT_MANAGER: 'Chef de projet', COLLABORATOR: 'Collaborateur', CLIENT: 'Client', COMPANY: 'Entreprise' } as Record<Role, string>)[r]; }
+
+function Modal({ type, data, close, submit }: { type: string; data: Record<string, Any>; close: () => void; submit: (e: FormEvent<HTMLFormElement>) => void }) {
+  const projects = data.projects || [], clients = data.clients || [];
+  const project = <label>Projet<select name="projectId" required>{projects.map((x: Any) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>;
+  return <div className="bp53Modal"><form onSubmit={submit}><div className="bp53ModalTitle"><div><small>NOUVEL ÉLÉMENT</small><h2>{modules.find((m) => m.id === type)?.label}</h2></div><button type="button" onClick={close}>×</button></div>{type === 'projects' && <><label>Nom du projet<input name="name" required /></label><label>Référence<input name="reference" required /></label><label>Adresse<input name="address" /></label><label>Client<select name="clientId"><option value="">Aucun</option>{clients.map((x: Any) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label></>}{type === 'tasks' && <>{project}<label>Titre<input name="title" required /></label><label>Échéance<input name="dueAt" type="date" /></label></>}{type === 'clients' && <><label>Nom<input name="name" required /></label><label>E-mail<input name="email" type="email" /></label><label>Téléphone<input name="phone" /></label></>}{type === 'companies' && <><label>Nom<input name="name" required /></label><label>Corps d’état<input name="trade" /></label><label>E-mail<input name="email" /></label></>}{type === 'gantt' && <>{project}<label>Activité<input name="title" required /></label><label>Début<input name="start" type="date" required /></label><label>Fin<input name="end" type="date" required /></label></>}{type === 'site' && <>{project}<label>Observation<input name="title" required /></label><label>Description<textarea name="description" /></label><label>Localisation<input name="location" /></label></>}{type === 'documents' && <>{project}<label>Nom<input name="name" required /></label><label>Catégorie<input name="category" required /></label></>}{type === 'signatures' && <>{project}<label>Titre<input name="title" required /></label><label>Signataires<textarea name="signers" defaultValue="[]" /></label></>}{type === 'finance' && <>{project}<label>Libellé<input name="label" required /></label><label>Catégorie<input name="category" required /></label><label>Budget<input name="budget" type="number" /></label></>}{type === 'reception' && <>{project}<label>Date<input name="date" type="date" required /></label><label>Statut<input name="status" defaultValue="PREPARATION" /></label></>}<footer><button type="button" className="outline" onClick={close}>Annuler</button><button>Enregistrer</button></footer></form></div>;
+}
+
+===== FILE: components\GlobalTasksV55.tsx =====
+'use client';import {useEffect,useMemo,useState} from 'react';type A=Record<string,any>;async function api(u:string,o?:RequestInit){const r=await fetch(u,{cache:'no-store',...o}),j=await r.json();if(!r.ok)throw Error(j.error||'Erreur');return j}export default function GlobalTasksV55(){const[tasks,setTasks]=useState<A[]>([]),[users,setUsers]=useState<A[]>([]),[projects,setProjects]=useState<A[]>([]),[project,setProject]=useState(''),[user,setUser]=useState(''),[status,setStatus]=useState('');async function load(){const q=new URLSearchParams();if(project)q.set('projectId',project);if(user)q.set('assigneeId',user);if(status)q.set('status',status);const[t,u,p]=await Promise.all([api('/api/project-tasks?'+q),api('/api/collaborators'),api('/api/projects')]);setTasks(t);setUsers(u);setProjects(p)}useEffect(()=>{load()},[project,user,status]);const loads=useMemo(()=>users.map(u=>({u,h:tasks.filter(t=>t.assigneeId===u.id&&t.status!=='DONE').reduce((a,t)=>a+(t.plannedHours||0),0)})),[users,tasks]);return <div><div className="v55Filters"><select value={project} onChange={e=>setProject(e.target.value)}><option value="">Tous les projets</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><select value={user} onChange={e=>setUser(e.target.value)}><option value="">Tous les collaborateurs</option>{users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select><select value={status} onChange={e=>setStatus(e.target.value)}><option value="">Tous les statuts</option>{['TODO','IN_PROGRESS','BLOCKED','REVIEW','DONE'].map(s=><option key={s}>{s}</option>)}</select></div><div className="bp53Kanban">{[['TODO','À faire'],['IN_PROGRESS','En cours'],['BLOCKED','Bloquées'],['DONE','Terminées']].map(([s,l])=><section key={s}><h3>{l}<em>{tasks.filter(t=>t.status===s).length}</em></h3>{tasks.filter(t=>t.status===s).map(t=><article key={t.id}><b>{t.title}</b><small>{t.project?.name} · {t.phase?.code||'Sans phase'}</small><span>{t.assignee?.name||'Non affectée'} · {t.plannedHours||0} h</span></article>)}</section>)}</div><section className="bp53Panel"><h2>Charge équipe</h2><div className="v55Capacity">{loads.map(({u,h})=>{const cap=u.capacityHours||35,pct=Math.round(h/cap*100);return <div key={u.id}><b>{u.name}</b><span><i style={{width:Math.min(pct,100)+'%',background:pct>110?'#c74949':pct>100?'#dd8b2d':pct>=80?'#40a2d1':'#45a56e'}}/></span><em>{h} h / {cap} h · {pct}%</em></div>})}</div></section></div>}
+
+===== FILE: components\ProjectWorkspace.tsx =====
+'use client';import {FormEvent,useEffect,useState} from 'react';type A=Record<string,any>;async function api(u:string,o?:RequestInit){const r=await fetch(u,{cache:'no-store',...o}),j=await r.json();if(!r.ok)throw Error(j.error||'Erreur');return j}const send=(u:string,m:string,b:A)=>api(u,{method:m,headers:{'content-type':'application/json'},body:JSON.stringify(b)});
+export default function ProjectWorkspace({projectId,onBack}:{projectId:string,onBack:()=>void}){const[p,setP]=useState<A|null>(null),[tab,setTab]=useState('overview'),[phases,setPhases]=useState<A[]>([]),[planning,setPlanning]=useState<A[]>([]),[tasks,setTasks]=useState<A[]>([]),[users,setUsers]=useState<A[]>([]),[members,setMembers]=useState<A[]>([]),[modal,setModal]=useState(''),[error,setError]=useState('');async function load(){try{const[a,b,c,d,e,f]=await Promise.all([api('/api/projects/'+projectId),api('/api/project-phases?projectId='+projectId),api('/api/project-planning?projectId='+projectId),api('/api/project-tasks?projectId='+projectId),api('/api/collaborators'),api('/api/project-members?projectId='+projectId)]);setP(a);setPhases(b);setPlanning(c);setTasks(d);setUsers(e);setMembers(f)}catch(e){setError(e instanceof Error?e.message:String(e))}}useEffect(()=>{load()},[projectId]);async function create(e:FormEvent<HTMLFormElement>){e.preventDefault();const b=Object.fromEntries(new FormData(e.currentTarget)),url=modal==='phase'?'/api/project-phases':modal==='planning'?'/api/project-planning':modal==='member'?'/api/project-members':'/api/project-tasks';try{await send(url,'POST',{...b,projectId});setModal('');load()}catch(e){setError(e instanceof Error?e.message:String(e))}}if(!p)return <p>Chargement…</p>;return <main className="v55Work"><header><button className="outline" onClick={onBack}>← Portefeuille</button><div><small>{p.reference} · {p.client?.name||'Client à renseigner'}</small><h1>{p.name}</h1><p>{p.address||'Adresse à définir'}</p></div><strong className="v55Circle">{p.progress||0}%</strong></header><nav className="v55Tabs">{[['overview','Synthèse'],['phases','Phases MOE'],['gantt','Gantt projet'],['tasks','Tâches projet'],['team','Équipe'],['lots','Lots'],['documents','Documents'],['site','Chantier'],['finance','Finance']].map(([k,l])=><button key={k} className={tab===k?'active':''} onClick={()=>setTab(k)}>{l}</button>)}</nav>{error&&<div className="bp53Error">{error}</div>}{tab==='overview'&&<Overview p={p} phases={phases} tasks={tasks} members={members}/>} {tab==='phases'&&<Phases rows={phases} projectId={projectId} add={()=>setModal('phase')} load={load}/>} {tab==='gantt'&&<Gantt rows={planning} phases={phases} add={()=>setModal('planning')} load={load}/>} {tab==='tasks'&&<Tasks rows={tasks} phases={phases} users={users} add={()=>setModal('task')} load={load}/>} {tab==='team'&&<Team rows={members} users={users} add={()=>setModal('member')} load={load}/>} {tab==='lots'&&<Simple title="Lots du projet" rows={p.lots}/>} {tab==='documents'&&<Simple title="Documents" rows={p.documents}/>} {tab==='site'&&<Simple title="Observations chantier" rows={p.observations}/>} {tab==='finance'&&<Simple title="Budget & engagements" rows={p.budgets}/>} {modal&&<Modal type={modal} users={users} phases={phases} close={()=>setModal('')} submit={create}/>}</main>}
+function Overview({p,phases,tasks,members}:{p:A;phases:A[];tasks:A[];members:A[]}){return <><div className="bp53Kpis"><article><i>◫</i><div><small>Phases</small><strong>{phases.length}</strong></div></article><article><i>✓</i><div><small>Tâches ouvertes</small><strong>{tasks.filter(x=>x.status!=='DONE').length}</strong></div></article><article><i>♙</i><div><small>Équipe</small><strong>{members.length}</strong></div></article><article><i>⚑</i><div><small>Observations</small><strong>{p.observations.length}</strong></div></article></div><section className="bp53Panel"><h2>Cycle maîtrise d’œuvre</h2><div className="v55Ribbon">{phases.map(x=><article key={x.id} className={x.progress===100?'done':''}><b>{x.code}</b><small>{x.name}</small><span>{x.progress}%</span></article>)}</div></section></>}
+function Phases({rows,projectId,add,load}:{rows:A[];projectId:string;add:()=>void;load:()=>void}){async function init(){await send('/api/project-phases','POST',{projectId,template:true,durationDays:21,startDate:new Date().toISOString()});load()}return <section className="bp53Panel"><header><h2>Phases métier MOE</h2><div><button className="outline" onClick={init}>Initialiser ESQ → AOR</button><button onClick={add}>+ Phase</button></div></header><div className="v55Phase">{rows.map(x=><div key={x.id}><b>{x.code}</b><div><strong>{x.name}</strong><small>{x.startDate?new Date(x.startDate).toLocaleDateString('fr-FR'):'—'} → {x.endDate?new Date(x.endDate).toLocaleDateString('fr-FR'):'—'} · {x._count?.tasks||0} tâches</small></div><input type="range" min="0" max="100" value={x.progress} onChange={async e=>{await send('/api/project-phases','PATCH',{id:x.id,progress:+e.target.value});load()}}/><span>{x.progress}%</span></div>)}</div></section>}
+function Gantt({rows,phases,add,load}:{rows:A[];phases:A[];add:()=>void;load:()=>void}){return <section className="bp53Panel"><header><h2>Gantt du projet</h2><button onClick={add}>+ Activité</button></header><div className="v55Gantt">{rows.map(x=><div key={x.id}><b>{x.title}<small>{x.phase?.code||'Hors phase'}</small></b><span>{new Date(x.start).toLocaleDateString('fr-FR')} → {new Date(x.end).toLocaleDateString('fr-FR')}</span><i><em style={{width:x.progress+'%'}}/></i><select value={x.phaseId||''} onChange={async e=>{await send('/api/project-planning','PATCH',{id:x.id,phaseId:e.target.value});load()}}><option value="">Hors phase</option>{phases.map(p=><option key={p.id} value={p.id}>{p.code}</option>)}</select><input type="range" min="0" max="100" value={x.progress} onChange={async e=>{await send('/api/project-planning','PATCH',{id:x.id,progress:+e.target.value});load()}}/><strong>{x.progress}%</strong></div>)}</div></section>}
+function Tasks({rows,phases,users,add,load}:{rows:A[];phases:A[];users:A[];add:()=>void;load:()=>void}){return <section className="bp53Panel"><header><h2>Tâches du projet</h2><button onClick={add}>+ Tâche</button></header><div className="v55Task"><b>Tâche</b><b>Phase</b><b>Statut</b><b>Collaborateur</b><b>Charge</b>{rows.map(x=><div className="contents" key={x.id}><span>{x.title}</span><select value={x.phaseId||''} onChange={async e=>{await send('/api/project-tasks','PATCH',{id:x.id,phaseId:e.target.value});load()}}><option value="">—</option>{phases.map(p=><option key={p.id} value={p.id}>{p.code}</option>)}</select><select value={x.status} onChange={async e=>{await send('/api/project-tasks','PATCH',{id:x.id,status:e.target.value});load()}}>{['TODO','IN_PROGRESS','BLOCKED','REVIEW','DONE'].map(s=><option key={s}>{s}</option>)}</select><select value={x.assigneeId||''} onChange={async e=>{await send('/api/project-tasks','PATCH',{id:x.id,assigneeId:e.target.value});load()}}><option value="">Non affectée</option>{users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select><span>{x.plannedHours||0} h</span></div>)}</div></section>}
+function Team({rows,users,add,load}:{rows:A[];users:A[];add:()=>void;load:()=>void}){return <section className="bp53Panel"><header><h2>Équipe projet</h2><button onClick={add}>+ Collaborateur</button></header>{rows.map(m=><div className="bp53Row" key={m.id}><div className="bp53RowIcon">{m.user.name[0]}</div><div><b>{m.user.name}</b><small>{m.projectRole} · {m.user.jobTitle||m.user.role}</small></div><button className="outline" onClick={async()=>{await send('/api/project-members','DELETE',{id:m.id});load()}}>Retirer</button></div>)}</section>}
+function Simple({title,rows}:{title:string;rows:A[]}){return <section className="bp53Panel"><h2>{title}</h2>{!rows.length&&<p>Aucune donnée.</p>}{rows.map(x=><div className="bp53Row" key={x.id}><div><b>{x.name||x.title||x.label}</b><small>{x.status||x.category||x.company?.name||''}</small></div></div>)}</section>}
+function Modal({type,users,phases,close,submit}:{type:string;users:A[];phases:A[];close:()=>void;submit:(e:FormEvent<HTMLFormElement>)=>void}){return <div className="bp53Modal"><form onSubmit={submit}><div className="bp53ModalTitle"><div><small>NOUVEL ÉLÉMENT</small><h2>{type==='phase'?'Phase MOE':type==='planning'?'Activité Gantt':type==='member'?'Collaborateur projet':'Tâche projet'}</h2></div><button type="button" onClick={close}>×</button></div>{type==='phase'&&<><label>Code<input name="code" required/></label><label>Nom<input name="name" required/></label><label>Début<input name="startDate" type="date"/></label><label>Fin<input name="endDate" type="date"/></label></>}{type==='planning'&&<><label>Activité<input name="title" required/></label><label>Phase<select name="phaseId"><option value="">Hors phase</option>{phases.map(p=><option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}</select></label><label>Début<input name="start" type="date" required/></label><label>Fin<input name="end" type="date" required/></label></>}{type==='task'&&<><label>Titre<input name="title" required/></label><label>Description<textarea name="description"/></label><label>Phase<select name="phaseId"><option value="">—</option>{phases.map(p=><option key={p.id} value={p.id}>{p.code}</option>)}</select></label><label>Collaborateur<select name="assigneeId"><option value="">Non affectée</option>{users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></label><label>Échéance<input name="dueAt" type="date"/></label><label>Charge prévue (h)<input name="plannedHours" type="number" step="0.5"/></label></>}{type==='member'&&<><label>Collaborateur<select name="userId" required>{users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></label><label>Rôle projet<select name="projectRole"><option>Chef de projet</option><option>Architecte projet</option><option>Économiste</option><option>Suivi travaux</option><option>OPC</option><option>Collaborateur</option></select></label></>}<footer><button type="button" className="outline" onClick={close}>Annuler</button><button>Enregistrer</button></footer></form></div>}
+
+===== FILE: lib\auth.ts =====
+import {cookies} from 'next/headers';import {createHash,randomBytes} from 'crypto';import {db} from './db';
+const COOKIE='batipilot_session',hash=(v:string)=>createHash('sha256').update(v).digest('hex');
+export async function currentUser(){const t=(await cookies()).get(COOKIE)?.value;if(!t)return null;const s=await db.session.findUnique({where:{tokenHash:hash(t)},include:{user:true}});return !s||s.expiresAt<new Date()||s.user.status!=='ACTIVE'?null:s.user}
+export async function requireUser(){const u=await currentUser();if(!u)throw new Error('UNAUTHORIZED');return u}
+export async function createSession(userId:string){const t=randomBytes(32).toString('base64url');const expiresAt=new Date(Date.now()+Number(process.env.SESSION_TTL_HOURS||8)*3600000);await db.session.create({data:{tokenHash:hash(t),userId,expiresAt}});(await cookies()).set(COOKIE,t,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/',expires:expiresAt})}
+export async function clearSession(){const c=await cookies(),t=c.get(COOKIE)?.value;if(t)await db.session.deleteMany({where:{tokenHash:hash(t)}});c.set(COOKIE,'',{path:'/',maxAge:0})}
+export function fail(e:unknown){const m=e instanceof Error?e.message:'ERROR';return Response.json({error:m},{status:m==='UNAUTHORIZED'?401:m==='FORBIDDEN'?403:500})}
+
+===== FILE: lib\db.ts =====
+import {PrismaClient} from '@prisma/client';
+const globalForPrisma=globalThis as unknown as {prisma?:PrismaClient};
+export const db=globalForPrisma.prisma??new PrismaClient();
+if(process.env.NODE_ENV!=='production')globalForPrisma.prisma=db;
+
+===== FILE: lib\modules.ts =====
+export const modules=[
+{id:'dashboard',label:'Tableau de bord',icon:'⌂',roles:['ADMIN','PROJECT_MANAGER','COLLABORATOR']},
+{id:'projects',label:'Projets',icon:'▣',roles:['ADMIN','PROJECT_MANAGER','COLLABORATOR']},
+{id:'gantt',label:'Planning Gantt',icon:'▤',roles:['ADMIN','PROJECT_MANAGER','COLLABORATOR','CLIENT','COMPANY']},
+{id:'tasks',label:'Tâches',icon:'✓',roles:['ADMIN','PROJECT_MANAGER','COLLABORATOR']},
+{id:'capacity',label:'Charge équipe',icon:'◫',roles:['ADMIN','PROJECT_MANAGER']},
+{id:'clients',label:'Clients',icon:'♙',roles:['ADMIN','PROJECT_MANAGER']},
+{id:'companies',label:'Entreprises',icon:'▱',roles:['ADMIN','PROJECT_MANAGER','COMPANY']},
+{id:'site',label:'Suivi chantier',icon:'⚑',roles:['ADMIN','PROJECT_MANAGER','COLLABORATOR','COMPANY']},
+{id:'documents',label:'Documents',icon:'▦',roles:['ADMIN','PROJECT_MANAGER','COLLABORATOR','CLIENT','COMPANY']},
+{id:'signatures',label:'Signatures',icon:'✎',roles:['ADMIN','PROJECT_MANAGER','CLIENT','COMPANY']},
+{id:'consultations',label:'Consultations',icon:'◇',roles:['ADMIN','PROJECT_MANAGER','COMPANY']},
+{id:'finance',label:'Budget & honoraires',icon:'€',roles:['ADMIN','PROJECT_MANAGER']},
+{id:'reception',label:'OPR & réserves',icon:'⚐',roles:['ADMIN','PROJECT_MANAGER','CLIENT','COMPANY']},
+{id:'client',label:'Portail client',icon:'◉',roles:['CLIENT']},
+{id:'admin',label:'Administration',icon:'⚙',roles:['ADMIN']}
+];
+
+===== FILE: lib\password.ts =====
+import {randomBytes,scrypt as scryptCb,timingSafeEqual} from 'crypto';import {promisify} from 'util';const scrypt=promisify(scryptCb);
+export async function hashPassword(p:string){const s=randomBytes(16);const k=await scrypt(p,s,64) as Buffer;return `scrypt$${s.toString('hex')}$${k.toString('hex')}`}
+export async function verifyPassword(p:string,h:string){const [a,s,k]=h.split('$');if(a!=='scrypt'||!s||!k)return false;const x=await scrypt(p,Buffer.from(s,'hex'),64) as Buffer,e=Buffer.from(k,'hex');return x.length===e.length&&timingSafeEqual(x,e)}
+
+===== FILE: prisma\schema-ancien.prisma =====
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+enum Role { ADMIN PROJECT_MANAGER COLLABORATOR CLIENT COMPANY }
+enum UserStatus { INVITED ACTIVE SUSPENDED }
+enum ProjectStatus { PROSPECT DESIGN CONSULTATION CONSTRUCTION RECEPTION CLOSED ARCHIVED }
+enum TaskStatus { TODO IN_PROGRESS BLOCKED REVIEW DONE }
+enum Priority { LOW NORMAL HIGH CRITICAL }
+enum DocumentVisibility { INTERNAL CLIENT COMPANY PUBLIC }
+enum ApprovalStatus { DRAFT PENDING APPROVED REJECTED }
+enum SignatureStatus { DRAFT SENT VIEWED SIGNED REFUSED EXPIRED CANCELLED }
+enum ObservationStatus { OPEN CORRECTED TO_VERIFY CLOSED OVERDUE }
+model Organization { id String @id @default(cuid()) name String agencies Agency[] users User[] clients Client[] companies Company[] projects Project[] createdAt DateTime @default(now()) updatedAt DateTime @updatedAt }
+model Agency { id String @id @default(cuid()) name String address String? organizationId String organization Organization @relation(fields:[organizationId],references:[id],onDelete:Cascade) }
+model User { id String @id @default(cuid()) email String @unique name String passwordHash String role Role @default(COLLABORATOR) status UserStatus @default(ACTIVE) jobTitle String? capacityHours Float @default(35) organizationId String organization Organization @relation(fields:[organizationId],references:[id],onDelete:Cascade) sessions Session[] memberships ProjectMember[] assignedTasks WorkTask[] timeEntries TimeEntry[] createdAt DateTime @default(now()) updatedAt DateTime @updatedAt }
+model Session { id String @id @default(cuid()) tokenHash String @unique userId String user User @relation(fields:[userId],references:[id],onDelete:Cascade) expiresAt DateTime createdAt DateTime @default(now()) }
+model Client { id String @id @default(cuid()) name String email String? phone String? address String? contacts Json? organizationId String organization Organization @relation(fields:[organizationId],references:[id],onDelete:Cascade) projects Project[] createdAt DateTime @default(now()) }
+model Company { id String @id @default(cuid()) name String trade String? email String? phone String? organizationId String organization Organization @relation(fields:[organizationId],references:[id],onDelete:Cascade) lots Lot[] observations Observation[] }
+model Project { id String @id @default(cuid()) name String reference String @unique address String? description String? status ProjectStatus @default(PROSPECT) progress Int @default(0) worksBudget Decimal? feesBudget Decimal? startDate DateTime? endDate DateTime? organizationId String organization Organization @relation(fields:[organizationId],references:[id],onDelete:Cascade) clientId String? client Client? @relation(fields:[clientId],references:[id],onDelete:SetNull) members ProjectMember[] phases Phase[] lots Lot[] tasks WorkTask[] planning PlanningTask[] documents Document[] meetings Meeting[] observations Observation[] signatures SignatureRequest[] budgets BudgetLine[] receptions Reception[] createdAt DateTime @default(now()) updatedAt DateTime @updatedAt }
+model ProjectMember { id String @id @default(cuid()) projectId String project Project @relation(fields:[projectId],references:[id],onDelete:Cascade) userId String user User @relation(fields:[userId],references:[id],onDelete:Cascade) projectRole String @@unique([projectId,userId]) }
+model Phase { id String @id @default(cuid()) code String name String responsibleId String? startDate DateTime? endDate DateTime? progress Int @default(0) projectId String project Project @relation(fields:[projectId],references:[id],onDelete:Cascade) deliverables Deliverable[] @@unique([projectId,code]) }
+model Deliverable { id String @id @default(cuid()) name String dueAt DateTime? status ApprovalStatus @default(DRAFT) phaseId String phase Phase @relation(fields:[phaseId],references:[id],onDelete:Cascade) }
+model Lot { id String @id @default(cuid()) number String name String estimate Decimal? contractAmount Decimal? projectId String project Project @relation(fields:[projectId],references:[id],onDelete:Cascade) companyId String? company Company? @relation(fields:[companyId],references:[id],onDelete:SetNull) planning PlanningTask[] observations Observation[] @@unique([projectId,number]) }
+model PlanningTask { id String @id @default(cuid()) title String start DateTime end DateTime progress Int @default(0) milestone Boolean @default(false) baselineStart DateTime? baselineEnd DateTime? dependencyIds Json? projectId String project Project @relation(fields:[projectId],references:[id],onDelete:Cascade) lotId String? lot Lot? @relation(fields:[lotId],references:[id],onDelete:SetNull) }
+model WorkTask { id String @id @default(cuid()) title String description String? status TaskStatus @default(TODO) priority Priority @default(NORMAL) dueAt DateTime? plannedHours Float? projectId String project Project @relation(fields:[projectId],references:[id],onDelete:Cascade) assigneeId String? assignee User? @relation(fields:[assigneeId],references:[id],onDelete:SetNull) timeEntries TimeEntry[] createdAt DateTime @default(now()) }
+model TimeEntry { id String @id @default(cuid()) hours Float date DateTime note String? taskId String task WorkTask @relation(fields:[taskId],references:[id],onDelete:Cascade) userId String user User @relation(fields:[userId],references:[id],onDelete:Cascade) }
+model Meeting { id String @id @default(cuid()) number Int date DateTime weather String? attendees Json? notes Json? publishedAt DateTime? projectId String project Project @relation(fields:[projectId],references:[id],onDelete:Cascade) }
+model Observation { id String @id @default(cuid()) title String description String? location String? dueAt DateTime? priority Priority @default(NORMAL) status ObservationStatus @default(OPEN) photos Json? projectId String project Project @relation(fields:[projectId],references:[id],onDelete:Cascade) lotId String? lot Lot? @relation(fields:[lotId],references:[id],onDelete:SetNull) companyId String? company Company? @relation(fields:[companyId],references:[id],onDelete:SetNull) }
+model Document { id String @id @default(cuid()) name String category String mimeType String? storageKey String? version Int @default(1) visibility DocumentVisibility @default(INTERNAL) approvalStatus ApprovalStatus @default(DRAFT) projectId String project Project @relation(fields:[projectId],references:[id],onDelete:Cascade) createdAt DateTime @default(now()) }
+model SignatureRequest { id String @id @default(cuid()) title String status SignatureStatus @default(DRAFT) provider String? providerId String? signers Json dueAt DateTime? evidenceUrl String? projectId String project Project @relation(fields:[projectId],references:[id],onDelete:Cascade) createdAt DateTime @default(now()) }
+model BudgetLine { id String @id @default(cuid()) label String category String budget Decimal @default(0) committed Decimal @default(0) paid Decimal @default(0) projectId String project Project @relation(fields:[projectId],references:[id],onDelete:Cascade) }
+model Reception { id String @id @default(cuid()) date DateTime status String projectId String project Project @relation(fields:[projectId],references:[id],onDelete:Cascade) reserves Reserve[] }
+model Reserve { id String @id @default(cuid()) title String location String? status ObservationStatus @default(OPEN) dueAt DateTime? receptionId String reception Reception @relation(fields:[receptionId],references:[id],onDelete:Cascade) }
+model AuditLog { id String @id @default(cuid()) organizationId String userId String? action String entity String entityId String? metadata Json? createdAt DateTime @default(now()) @@index([organizationId,createdAt]) }
+
+===== FILE: prisma\schema.prisma =====
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  PROJECT_MANAGER
+  COLLABORATOR
+  CLIENT
+  COMPANY
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+}
+
+enum ProjectStatus {
+  PROSPECT
+  DESIGN
+  CONSULTATION
+  CONSTRUCTION
+  RECEPTION
+  CLOSED
+  ARCHIVED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  REVIEW
+  DONE
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+enum DocumentVisibility {
+  INTERNAL
+  CLIENT
+  COMPANY
+  PUBLIC
+}
+
+enum ApprovalStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum SignatureStatus {
+  DRAFT
+  SENT
+  VIEWED
+  SIGNED
+  REFUSED
+  EXPIRED
+  CANCELLED
+}
+
+enum ObservationStatus {
+  OPEN
+  CORRECTED
+  TO_VERIFY
+  CLOSED
+  OVERDUE
+}
+
+model Organization {
+  id        String    @id @default(cuid())
+  name      String
+  agencies  Agency[]
+  users     User[]
+  clients   Client[]
+  companies Company[]
+  projects  Project[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Agency {
+  id             String       @id @default(cuid())
+  name           String
+  address        String?
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id             String          @id @default(cuid())
+  email          String          @unique
+  name           String
+  passwordHash   String
+  role           Role            @default(COLLABORATOR)
+  status         UserStatus      @default(ACTIVE)
+  jobTitle       String?
+  capacityHours  Float           @default(35)
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sessions       Session[]
+  memberships    ProjectMember[]
+  assignedTasks  WorkTask[]
+  timeEntries    TimeEntry[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([organizationId, role])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Client {
+  id             String       @id @default(cuid())
+  name           String
+  email          String?
+  phone          String?
+  address        String?
+  contacts       Json?
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projects       Project[]
+  createdAt      DateTime     @default(now())
+}
+
+model Company {
+  id             String        @id @default(cuid())
+  name           String
+  trade          String?
+  email          String?
+  phone          String?
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lots           Lot[]
+  observations   Observation[]
+}
+
+model Project {
+  id             String             @id @default(cuid())
+  name           String
+  reference      String             @unique
+  address        String?
+  description    String?
+  status         ProjectStatus      @default(PROSPECT)
+  progress       Int                @default(0)
+  worksBudget    Decimal?
+  feesBudget     Decimal?
+  startDate      DateTime?
+  endDate        DateTime?
+  organizationId String
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  clientId       String?
+  client         Client?            @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  members        ProjectMember[]
+  phases         Phase[]
+  lots           Lot[]
+  tasks          WorkTask[]
+  planning       PlanningTask[]
+  documents      Document[]
+  meetings       Meeting[]
+  observations   Observation[]
+  signatures     SignatureRequest[]
+  budgets        BudgetLine[]
+  receptions     Reception[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([organizationId, status])
+}
+
+model ProjectMember {
+  id          String  @id @default(cuid())
+  projectId   String
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectRole String
+
+  @@unique([projectId, userId])
+}
+
+model Phase {
+  id            String         @id @default(cuid())
+  code          String
+  name          String
+  responsibleId String?
+  startDate     DateTime?
+  endDate       DateTime?
+  progress      Int            @default(0)
+  projectId     String
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deliverables  Deliverable[]
+  tasks         WorkTask[]
+  planning      PlanningTask[]
+
+  @@unique([projectId, code])
+}
+
+model Deliverable {
+  id      String         @id @default(cuid())
+  name    String
+  dueAt   DateTime?
+  status  ApprovalStatus @default(DRAFT)
+  phaseId String
+  phase   Phase          @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+}
+
+model Lot {
+  id             String         @id @default(cuid())
+  number         String
+  name           String
+  estimate       Decimal?
+  contractAmount Decimal?
+  projectId      String
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  companyId      String?
+  company        Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  planning       PlanningTask[]
+  observations   Observation[]
+
+  @@unique([projectId, number])
+}
+
+model PlanningTask {
+  id            String    @id @default(cuid())
+  title         String
+  start         DateTime
+  end           DateTime
+  progress      Int       @default(0)
+  milestone     Boolean   @default(false)
+  baselineStart DateTime?
+  baselineEnd   DateTime?
+  dependencyIds Json?
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  phaseId       String?
+  phase         Phase?    @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  lotId         String?
+  lot           Lot?      @relation(fields: [lotId], references: [id], onDelete: SetNull)
+}
+
+model WorkTask {
+  id           String      @id @default(cuid())
+  title        String
+  description  String?
+  status       TaskStatus  @default(TODO)
+  priority     Priority    @default(NORMAL)
+  startAt      DateTime?
+  dueAt        DateTime?
+  plannedHours Float?
+  actualHours  Float?
+  projectId    String
+  project      Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  phaseId      String?
+  phase        Phase?      @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  assigneeId   String?
+  assignee     User?       @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  timeEntries  TimeEntry[]
+  createdAt    DateTime    @default(now())
+}
+
+model TimeEntry {
+  id     String   @id @default(cuid())
+  hours  Float
+  date   DateTime
+  note   String?
+  taskId String
+  task   WorkTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Meeting {
+  id          String    @id @default(cuid())
+  number      Int
+  date        DateTime
+  weather     String?
+  attendees   Json?
+  notes       Json?
+  publishedAt DateTime?
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, number])
+}
+
+model Observation {
+  id          String            @id @default(cuid())
+  title       String
+  description String?
+  location    String?
+  dueAt       DateTime?
+  priority    Priority          @default(NORMAL)
+  status      ObservationStatus @default(OPEN)
+  photos      Json?
+  projectId   String
+  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  lotId       String?
+  lot         Lot?              @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  companyId   String?
+  company     Company?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
+}
+
+model Document {
+  id             String             @id @default(cuid())
+  name           String
+  category       String
+  mimeType       String?
+  storageKey     String?
+  version        Int                @default(1)
+  visibility     DocumentVisibility @default(INTERNAL)
+  approvalStatus ApprovalStatus     @default(DRAFT)
+  projectId      String
+  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt      DateTime           @default(now())
+}
+
+model SignatureRequest {
+  id          String          @id @default(cuid())
+  title       String
+  status      SignatureStatus @default(DRAFT)
+  provider    String?
+  providerId  String?
+  signers     Json
+  dueAt       DateTime?
+  evidenceUrl String?
+  projectId   String
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt   DateTime        @default(now())
+}
+
+model BudgetLine {
+  id        String  @id @default(cuid())
+  label     String
+  category  String
+  budget    Decimal @default(0)
+  committed Decimal @default(0)
+  paid      Decimal @default(0)
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Reception {
+  id        String    @id @default(cuid())
+  date      DateTime
+  status    String
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reserves  Reserve[]
+}
+
+model Reserve {
+  id          String            @id @default(cuid())
+  title       String
+  location    String?
+  status      ObservationStatus @default(OPEN)
+  dueAt       DateTime?
+  receptionId String
+  reception   Reception         @relation(fields: [receptionId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String?
+  action         String
+  entity         String
+  entityId       String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+}
+
+===== FILE: prisma\seed-functional.ts =====
+import {PrismaClient,Role} from '@prisma/client';import {randomBytes,scryptSync} from 'crypto';const db=new PrismaClient();const hp=(p:string)=>{const s=randomBytes(16);return `scrypt$${s.toString('hex')}$${scryptSync(p,s,64).toString('hex')}`};async function main(){const email='admin@batipilot.local';let u=await db.user.findUnique({where:{email}});if(!u){const o=await db.organization.create({data:{name:'Cabinet BatiPilot'}});u=await db.user.create({data:{name:'Administrateur BatiPilot',email,passwordHash:hp('ChangeMe!2026'),role:Role.ADMIN,organizationId:o.id}})}console.log('Admin prêt:',email)}main().finally(()=>db.$disconnect())
+
+===== FILE: prisma\seed.ts =====
+import {
+  PrismaClient,
+  Prisma,
+  ProjectStatus,
+  TaskStatus,
+  Priority,
+  ApprovalStatus,
+  DocumentVisibility,
+  ObservationStatus,
+} from "@prisma/client";
+import { randomBytes, scryptSync } from "crypto";
+
+const prisma = new PrismaClient();
+const d = (value: string) => new Date(`${value}T08:00:00.000Z`);
+const money = (value: number) => new Prisma.Decimal(value);
+
+function passwordHash(password: string) {
+  const salt = randomBytes(16);
+  return `scrypt$${salt.toString("hex")}$${scryptSync(password, salt, 64).toString("hex")}`;
+}
+
+type ScheduleItem = {
+  title: string;
+  start: string;
+  end: string;
+  progress: number;
+  phase: string;
+  lot?: string;
+  milestone?: boolean;
+  dependencies?: number[];
+};
+
+type ProjectSeed = {
+  reference: string;
+  name: string;
+  address: string;
+  description: string;
+  status: ProjectStatus;
+  progress: number;
+  worksBudget: number;
+  feesBudget: number;
+  startDate: string;
+  endDate: string;
+  client: number;
+  phaseProgress: Record<string, number>;
+  schedule: ScheduleItem[];
+};
+
+const phaseTemplates = [
+  ["ESQ", "Esquisse"],
+  ["APS", "Avant-projet sommaire"],
+  ["APD", "Avant-projet définitif"],
+  ["PRO", "Études de projet"],
+  ["DCE", "Dossier de consultation des entreprises"],
+  ["ACT", "Assistance aux contrats de travaux"],
+  ["VISA", "Visa des études d’exécution"],
+  ["DET", "Direction de l’exécution des travaux"],
+  ["OPC", "Ordonnancement, pilotage et coordination"],
+  ["AOR", "Assistance aux opérations de réception"],
+] as const;
+
+const companySeeds = [
+  ["Armor Terrassement", "Terrassement / VRD"],
+  ["Fondations Bretagne", "Fondations"],
+  ["Bretagne Maçonnerie", "Gros œuvre / Maçonnerie"],
+  ["Structures Bois Ouest", "Charpente"],
+  ["Couverture Atlantique", "Couverture / Étanchéité"],
+  ["Menuiseries de l’Ouest", "Menuiseries extérieures"],
+  ["Isol’Ouest", "Isolation / Plâtrerie"],
+  ["Élec Bretagne", "Électricité"],
+  ["Plomberie Rennaise", "Plomberie"],
+  ["Thermique Services", "CVC / Chauffage"],
+  ["Sols & Matières", "Revêtements de sols"],
+  ["Agencement Armor", "Menuiseries intérieures"],
+  ["Peinture Armor", "Peinture"],
+  ["Façades de Bretagne", "Façades"],
+  ["Paysages de Bretagne", "Aménagements extérieurs"],
+  ["Déconstruction Ouest", "Curage / Désamiantage"],
+  ["Sécurité Incendie Ouest", "Sécurité incendie"],
+  ["Cloisons Concept", "Cloisons / Faux plafonds"],
+];
+
+const lotTemplates = [
+  ["01", "Installation de chantier", "Terrassement / VRD"],
+  ["02", "Terrassement", "Terrassement / VRD"],
+  ["03", "Fondations", "Fondations"],
+  ["04", "VRD et assainissement", "Terrassement / VRD"],
+  ["05", "Gros œuvre / Maçonnerie", "Gros œuvre / Maçonnerie"],
+  ["06", "Charpente", "Charpente"],
+  ["07", "Couverture / Étanchéité", "Couverture / Étanchéité"],
+  ["08", "Menuiseries extérieures", "Menuiseries extérieures"],
+  ["09", "Isolation / Plâtrerie", "Isolation / Plâtrerie"],
+  ["10", "Électricité CFO/CFA", "Électricité"],
+  ["11", "Plomberie / Sanitaires", "Plomberie"],
+  ["12", "Chauffage / CVC", "CVC / Chauffage"],
+  ["13", "Chapes et revêtements de sols", "Revêtements de sols"],
+  ["14", "Menuiseries intérieures", "Menuiseries intérieures"],
+  ["15", "Peinture", "Peinture"],
+  ["16", "Façades", "Façades"],
+  ["17", "Aménagements extérieurs", "Aménagements extérieurs"],
+  ["18", "OPR et réception", "Sécurité incendie"],
+] as const;
+
+const clients = [
+  [
+    "Famille Le Gall",
+    "contact.legall@example.test",
+    "12 rue des Tilleuls, 35000 Rennes",
+  ],
+  [
+    "SCI Ker Anna",
+    "contact@ker-anna.example.test",
+    "8 rue de la Cité, 35400 Saint-Malo",
+  ],
+  [
+    "Ville de Bruz",
+    "batiments@bruz.example.test",
+    "Place du Docteur Joly, 35170 Bruz",
+  ],
+  [
+    "Novaxis Conseil",
+    "immobilier@novaxis.example.test",
+    "2 avenue des Champs Blancs, 35510 Cesson-Sévigné",
+  ],
+  [
+    "Ouest Industrie",
+    "travaux@ouest-industrie.example.test",
+    "Parc industriel de la Haie, 35320 Crevin",
+  ],
+] as const;
+
+const projects: ProjectSeed[] = [
+  {
+    reference: "BAT-2026-001",
+    name: "Maison contemporaine Rennes",
+    address: "24 rue de la Prévalaye, 35000 Rennes",
+    description:
+      "Construction neuve d’une maison individuelle de 185 m² avec garage, pompe à chaleur et aménagements paysagers.",
+    status: ProjectStatus.CONSTRUCTION,
+    progress: 42,
+    worksBudget: 485000,
+    feesBudget: 58200,
+    startDate: "2026-02-02",
+    endDate: "2026-12-18",
+    client: 0,
+    phaseProgress: {
+      ESQ: 100,
+      APS: 100,
+      APD: 100,
+      PRO: 100,
+      DCE: 100,
+      ACT: 100,
+      VISA: 70,
+      DET: 42,
+      OPC: 45,
+      AOR: 0,
+    },
+    schedule: [
+      {
+        title: "Permis de construire obtenu",
+        start: "2026-02-02",
+        end: "2026-02-02",
+        progress: 100,
+        phase: "APD",
+        milestone: true,
+      },
+      {
+        title: "Installation de chantier",
+        start: "2026-03-02",
+        end: "2026-03-06",
+        progress: 100,
+        phase: "DET",
+        lot: "01",
+      },
+      {
+        title: "Terrassement",
+        start: "2026-03-09",
+        end: "2026-03-20",
+        progress: 100,
+        phase: "DET",
+        lot: "02",
+        dependencies: [1],
+      },
+      {
+        title: "Fondations",
+        start: "2026-03-23",
+        end: "2026-04-10",
+        progress: 100,
+        phase: "DET",
+        lot: "03",
+        dependencies: [2],
+      },
+      {
+        title: "VRD et assainissement",
+        start: "2026-04-06",
+        end: "2026-04-17",
+        progress: 100,
+        phase: "DET",
+        lot: "04",
+      },
+      {
+        title: "Élévation maçonnerie",
+        start: "2026-04-13",
+        end: "2026-05-29",
+        progress: 100,
+        phase: "DET",
+        lot: "05",
+        dependencies: [3],
+      },
+      {
+        title: "Charpente",
+        start: "2026-06-01",
+        end: "2026-06-19",
+        progress: 100,
+        phase: "DET",
+        lot: "06",
+      },
+      {
+        title: "Couverture et étanchéité",
+        start: "2026-06-15",
+        end: "2026-07-03",
+        progress: 100,
+        phase: "DET",
+        lot: "07",
+      },
+      {
+        title: "Hors d’eau",
+        start: "2026-07-03",
+        end: "2026-07-03",
+        progress: 100,
+        phase: "OPC",
+        milestone: true,
+      },
+      {
+        title: "Menuiseries extérieures",
+        start: "2026-06-29",
+        end: "2026-07-10",
+        progress: 100,
+        phase: "DET",
+        lot: "08",
+      },
+      {
+        title: "Hors d’air",
+        start: "2026-07-10",
+        end: "2026-07-10",
+        progress: 100,
+        phase: "OPC",
+        milestone: true,
+      },
+      {
+        title: "Isolation et plâtrerie",
+        start: "2026-07-13",
+        end: "2026-08-21",
+        progress: 75,
+        phase: "DET",
+        lot: "09",
+      },
+      {
+        title: "Électricité - 1re phase",
+        start: "2026-07-20",
+        end: "2026-08-28",
+        progress: 65,
+        phase: "DET",
+        lot: "10",
+      },
+      {
+        title: "Plomberie - 1re phase",
+        start: "2026-07-20",
+        end: "2026-08-28",
+        progress: 60,
+        phase: "DET",
+        lot: "11",
+      },
+      {
+        title: "PAC et plancher chauffant",
+        start: "2026-08-17",
+        end: "2026-09-11",
+        progress: 35,
+        phase: "DET",
+        lot: "12",
+      },
+      {
+        title: "Chapes et revêtements de sols",
+        start: "2026-09-07",
+        end: "2026-10-02",
+        progress: 10,
+        phase: "DET",
+        lot: "13",
+      },
+      {
+        title: "Menuiseries intérieures",
+        start: "2026-09-28",
+        end: "2026-10-16",
+        progress: 0,
+        phase: "DET",
+        lot: "14",
+      },
+      {
+        title: "Peinture",
+        start: "2026-10-05",
+        end: "2026-11-06",
+        progress: 0,
+        phase: "DET",
+        lot: "15",
+      },
+      {
+        title: "Façades",
+        start: "2026-08-31",
+        end: "2026-09-25",
+        progress: 20,
+        phase: "DET",
+        lot: "16",
+      },
+      {
+        title: "Aménagements extérieurs",
+        start: "2026-10-19",
+        end: "2026-11-20",
+        progress: 0,
+        phase: "OPC",
+        lot: "17",
+      },
+      {
+        title: "OPR",
+        start: "2026-11-30",
+        end: "2026-12-04",
+        progress: 0,
+        phase: "AOR",
+        lot: "18",
+      },
+      {
+        title: "Réception",
+        start: "2026-12-18",
+        end: "2026-12-18",
+        progress: 0,
+        phase: "AOR",
+        milestone: true,
+      },
+    ],
+  },
+  {
+    reference: "BAT-2026-002",
+    name: "Rénovation Longère Saint-Malo",
+    address: "Le Haut Salmon, 35400 Saint-Malo",
+    description:
+      "Rénovation complète d’une longère en pierre : curage, reprises structurelles, isolation biosourcée et pompe à chaleur.",
+    status: ProjectStatus.CONSTRUCTION,
+    progress: 68,
+    worksBudget: 320000,
+    feesBudget: 41600,
+    startDate: "2026-01-12",
+    endDate: "2026-09-25",
+    client: 1,
+    phaseProgress: {
+      ESQ: 100,
+      APS: 100,
+      APD: 100,
+      PRO: 100,
+      DCE: 100,
+      ACT: 100,
+      VISA: 90,
+      DET: 68,
+      OPC: 70,
+      AOR: 5,
+    },
+    schedule: [
+      {
+        title: "Diagnostic structure et amiante",
+        start: "2026-01-12",
+        end: "2026-01-23",
+        progress: 100,
+        phase: "PRO",
+      },
+      {
+        title: "Curage et déconstruction",
+        start: "2026-02-02",
+        end: "2026-02-20",
+        progress: 100,
+        phase: "DET",
+        lot: "01",
+      },
+      {
+        title: "Reprises en sous-œuvre",
+        start: "2026-02-23",
+        end: "2026-03-20",
+        progress: 100,
+        phase: "DET",
+        lot: "03",
+      },
+      {
+        title: "Maçonnerie pierre",
+        start: "2026-03-09",
+        end: "2026-04-17",
+        progress: 100,
+        phase: "DET",
+        lot: "05",
+      },
+      {
+        title: "Charpente et couverture",
+        start: "2026-04-06",
+        end: "2026-05-15",
+        progress: 100,
+        phase: "DET",
+        lot: "07",
+      },
+      {
+        title: "Menuiseries extérieures",
+        start: "2026-05-11",
+        end: "2026-05-29",
+        progress: 100,
+        phase: "DET",
+        lot: "08",
+      },
+      {
+        title: "Isolation biosourcée",
+        start: "2026-05-25",
+        end: "2026-06-26",
+        progress: 100,
+        phase: "DET",
+        lot: "09",
+      },
+      {
+        title: "Électricité et plomberie",
+        start: "2026-06-08",
+        end: "2026-07-17",
+        progress: 80,
+        phase: "DET",
+        lot: "10",
+      },
+      {
+        title: "Pompe à chaleur",
+        start: "2026-07-06",
+        end: "2026-07-24",
+        progress: 70,
+        phase: "DET",
+        lot: "12",
+      },
+      {
+        title: "Sols et faïences",
+        start: "2026-07-20",
+        end: "2026-08-14",
+        progress: 45,
+        phase: "DET",
+        lot: "13",
+      },
+      {
+        title: "Peinture et finitions",
+        start: "2026-08-03",
+        end: "2026-09-04",
+        progress: 20,
+        phase: "DET",
+        lot: "15",
+      },
+      {
+        title: "OPR",
+        start: "2026-09-14",
+        end: "2026-09-18",
+        progress: 0,
+        phase: "AOR",
+        lot: "18",
+      },
+      {
+        title: "Réception",
+        start: "2026-09-25",
+        end: "2026-09-25",
+        progress: 0,
+        phase: "AOR",
+        milestone: true,
+      },
+    ],
+  },
+  {
+    reference: "BAT-2026-003",
+    name: "Extension Groupe Scolaire Bruz",
+    address: "18 avenue Jules Tricault, 35170 Bruz",
+    description:
+      "Extension de 1 250 m² comprenant huit classes, restauration, préau et mise en conformité accessibilité.",
+    status: ProjectStatus.CONSTRUCTION,
+    progress: 25,
+    worksBudget: 1850000,
+    feesBudget: 222000,
+    startDate: "2026-03-02",
+    endDate: "2027-02-12",
+    client: 2,
+    phaseProgress: {
+      ESQ: 100,
+      APS: 100,
+      APD: 100,
+      PRO: 100,
+      DCE: 100,
+      ACT: 90,
+      VISA: 40,
+      DET: 25,
+      OPC: 28,
+      AOR: 0,
+    },
+    schedule: [
+      {
+        title: "Études APS / APD",
+        start: "2026-03-02",
+        end: "2026-04-24",
+        progress: 100,
+        phase: "APD",
+      },
+      {
+        title: "Études PRO et DCE",
+        start: "2026-04-27",
+        end: "2026-06-19",
+        progress: 100,
+        phase: "DCE",
+      },
+      {
+        title: "Consultation des entreprises",
+        start: "2026-06-22",
+        end: "2026-07-31",
+        progress: 100,
+        phase: "ACT",
+      },
+      {
+        title: "Préparation de chantier",
+        start: "2026-08-17",
+        end: "2026-09-04",
+        progress: 100,
+        phase: "OPC",
+        lot: "01",
+      },
+      {
+        title: "Terrassement et fondations",
+        start: "2026-09-07",
+        end: "2026-10-16",
+        progress: 70,
+        phase: "DET",
+        lot: "03",
+      },
+      {
+        title: "Gros œuvre",
+        start: "2026-10-05",
+        end: "2026-12-11",
+        progress: 35,
+        phase: "DET",
+        lot: "05",
+      },
+      {
+        title: "Charpente bois",
+        start: "2026-11-30",
+        end: "2027-01-08",
+        progress: 10,
+        phase: "DET",
+        lot: "06",
+      },
+      {
+        title: "Clos-couvert",
+        start: "2026-12-14",
+        end: "2027-01-29",
+        progress: 0,
+        phase: "DET",
+        lot: "07",
+      },
+      {
+        title: "Lots techniques",
+        start: "2027-01-04",
+        end: "2027-02-05",
+        progress: 0,
+        phase: "DET",
+        lot: "10",
+      },
+      {
+        title: "Commission de sécurité",
+        start: "2027-02-08",
+        end: "2027-02-08",
+        progress: 0,
+        phase: "AOR",
+        milestone: true,
+      },
+      {
+        title: "Réception",
+        start: "2027-02-12",
+        end: "2027-02-12",
+        progress: 0,
+        phase: "AOR",
+        milestone: true,
+      },
+    ],
+  },
+  {
+    reference: "BAT-2026-004",
+    name: "Aménagement Bureaux Rennes",
+    address: "6 rue du Chêne Germain, 35510 Cesson-Sévigné",
+    description:
+      "Aménagement de 2 100 m² de bureaux : flex-office, salles de réunion, CVC, sûreté et mobilier.",
+    status: ProjectStatus.RECEPTION,
+    progress: 83,
+    worksBudget: 675000,
+    feesBudget: 74250,
+    startDate: "2026-02-16",
+    endDate: "2026-07-10",
+    client: 3,
+    phaseProgress: {
+      ESQ: 100,
+      APS: 100,
+      APD: 100,
+      PRO: 100,
+      DCE: 100,
+      ACT: 100,
+      VISA: 100,
+      DET: 90,
+      OPC: 90,
+      AOR: 55,
+    },
+    schedule: [
+      {
+        title: "Relevés et conception",
+        start: "2026-02-16",
+        end: "2026-03-06",
+        progress: 100,
+        phase: "APD",
+      },
+      {
+        title: "Curage",
+        start: "2026-03-16",
+        end: "2026-03-27",
+        progress: 100,
+        phase: "DET",
+        lot: "01",
+      },
+      {
+        title: "Cloisons et faux plafonds",
+        start: "2026-03-30",
+        end: "2026-04-24",
+        progress: 100,
+        phase: "DET",
+        lot: "09",
+      },
+      {
+        title: "Courants forts et faibles",
+        start: "2026-04-13",
+        end: "2026-05-15",
+        progress: 100,
+        phase: "DET",
+        lot: "10",
+      },
+      {
+        title: "CVC",
+        start: "2026-04-13",
+        end: "2026-05-22",
+        progress: 100,
+        phase: "DET",
+        lot: "12",
+      },
+      {
+        title: "Contrôle d’accès",
+        start: "2026-05-04",
+        end: "2026-05-22",
+        progress: 100,
+        phase: "DET",
+        lot: "10",
+      },
+      {
+        title: "Revêtements et peinture",
+        start: "2026-05-18",
+        end: "2026-06-19",
+        progress: 90,
+        phase: "DET",
+        lot: "15",
+      },
+      {
+        title: "Mobilier",
+        start: "2026-06-15",
+        end: "2026-06-26",
+        progress: 80,
+        phase: "OPC",
+        lot: "14",
+      },
+      {
+        title: "OPR",
+        start: "2026-06-29",
+        end: "2026-07-03",
+        progress: 60,
+        phase: "AOR",
+        lot: "18",
+      },
+      {
+        title: "Réception",
+        start: "2026-07-10",
+        end: "2026-07-10",
+        progress: 0,
+        phase: "AOR",
+        milestone: true,
+      },
+    ],
+  },
+  {
+    reference: "BAT-2026-005",
+    name: "Réhabilitation Bâtiment Industriel",
+    address: "ZI de la Haie, 35320 Crevin",
+    description:
+      "Réhabilitation d’un bâtiment industriel de 6 500 m² avec désamiantage, toiture, dallage, ventilation et sécurité incendie.",
+    status: ProjectStatus.CONSTRUCTION,
+    progress: 12,
+    worksBudget: 2400000,
+    feesBudget: 264000,
+    startDate: "2026-09-07",
+    endDate: "2027-05-28",
+    client: 4,
+    phaseProgress: {
+      ESQ: 100,
+      APS: 100,
+      APD: 100,
+      PRO: 100,
+      DCE: 100,
+      ACT: 80,
+      VISA: 20,
+      DET: 12,
+      OPC: 15,
+      AOR: 0,
+    },
+    schedule: [
+      {
+        title: "Diagnostic structure",
+        start: "2026-09-07",
+        end: "2026-09-25",
+        progress: 100,
+        phase: "PRO",
+      },
+      {
+        title: "Désamiantage",
+        start: "2026-10-05",
+        end: "2026-11-06",
+        progress: 60,
+        phase: "DET",
+        lot: "01",
+      },
+      {
+        title: "Renforcement de charpente",
+        start: "2026-11-02",
+        end: "2026-12-18",
+        progress: 15,
+        phase: "DET",
+        lot: "06",
+      },
+      {
+        title: "Réfection de toiture",
+        start: "2026-11-30",
+        end: "2027-01-29",
+        progress: 0,
+        phase: "DET",
+        lot: "07",
+      },
+      {
+        title: "Dallage industriel",
+        start: "2027-01-04",
+        end: "2027-02-12",
+        progress: 0,
+        phase: "DET",
+        lot: "13",
+      },
+      {
+        title: "Électricité industrielle",
+        start: "2027-02-01",
+        end: "2027-03-26",
+        progress: 0,
+        phase: "DET",
+        lot: "10",
+      },
+      {
+        title: "Ventilation process",
+        start: "2027-02-15",
+        end: "2027-04-09",
+        progress: 0,
+        phase: "DET",
+        lot: "12",
+      },
+      {
+        title: "Sécurité incendie",
+        start: "2027-03-15",
+        end: "2027-04-23",
+        progress: 0,
+        phase: "DET",
+        lot: "18",
+      },
+      {
+        title: "Marquage et finitions",
+        start: "2027-04-19",
+        end: "2027-05-07",
+        progress: 0,
+        phase: "OPC",
+        lot: "15",
+      },
+      {
+        title: "Essais et réception",
+        start: "2027-05-10",
+        end: "2027-05-28",
+        progress: 0,
+        phase: "AOR",
+        lot: "18",
+      },
+      {
+        title: "Réception",
+        start: "2027-05-28",
+        end: "2027-05-28",
+        progress: 0,
+        phase: "AOR",
+        milestone: true,
+      },
+    ],
+  },
+];
+
+async function main() {
+  console.log("Initialisation des données de démonstration BatiPilot…");
+
+  const existingAdmin = await prisma.user.findUnique({
+    where: { email: "admin@batipilot.local" },
+  });
+  let organization = existingAdmin
+    ? await prisma.organization.findUniqueOrThrow({
+        where: { id: existingAdmin.organizationId },
+      })
+    : await prisma.organization.findFirst({ orderBy: { createdAt: "asc" } });
+
+  if (!organization) {
+    organization = await prisma.organization.create({
+      data: { name: "BatiPilot Démonstration" },
+    });
+  }
+
+  const admin =
+    existingAdmin ??
+    (await prisma.user.create({
+      data: {
+        email: "admin@batipilot.local",
+        name: "Administrateur BatiPilot",
+        passwordHash: passwordHash("ChangeMe!2026"),
+        role: "ADMIN",
+        status: "ACTIVE",
+        jobTitle: "Administrateur",
+        organizationId: organization.id,
+      },
+    }));
+
+  await prisma.$transaction(async (tx) => {
+    // Remise à zéro des données métier pour garantir exactement cinq chantiers.
+    // Les utilisateurs, dont admin@batipilot.local, sont conservés.
+    await tx.project.deleteMany({ where: { organizationId: organization!.id } });
+    await tx.client.deleteMany({ where: { organizationId: organization!.id } });
+    await tx.company.deleteMany({ where: { organizationId: organization!.id } });
+  });
+
+  const createdClients = [];
+  for (const [name, email, address] of clients) {
+    createdClients.push(
+      await prisma.client.create({
+        data: {
+          name,
+          email,
+          address,
+          phone: "02 99 00 00 00",
+          organizationId: organization.id,
+        },
+      }),
+    );
+  }
+
+  const companies = new Map<string, { id: string; name: string }>();
+  for (const [name, trade] of companySeeds) {
+    const company = await prisma.company.create({
+      data: {
+        name,
+        trade,
+        email: `${name
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9]+/g, ".")
+          .replace(/^\.|\.$/g, "")}@example.test`,
+        phone: "02 99 10 20 30",
+        organizationId: organization.id,
+      },
+    });
+    companies.set(trade, company);
+  }
+
+  for (const seed of projects) {
+    console.log(`Création de ${seed.reference} - ${seed.name}`);
+    const project = await prisma.project.create({
+      data: {
+        reference: seed.reference,
+        name: seed.name,
+        address: seed.address,
+        description: seed.description,
+        status: seed.status,
+        progress: seed.progress,
+        worksBudget: money(seed.worksBudget),
+        feesBudget: money(seed.feesBudget),
+        startDate: d(seed.startDate),
+        endDate: d(seed.endDate),
+        organizationId: organization.id,
+        clientId: createdClients[seed.client].id,
+      },
+    });
+
+    await prisma.projectMember.create({
+      data: {
+        projectId: project.id,
+        userId: admin.id,
+        projectRole: "Chef de projet",
+      },
+    });
+
+    const phases = new Map<string, { id: string }>();
+    for (let i = 0; i < phaseTemplates.length; i++) {
+      const [code, name] = phaseTemplates[i];
+      const phase = await prisma.phase.create({
+        data: {
+          code,
+          name,
+          progress: seed.phaseProgress[code] ?? 0,
+          projectId: project.id,
+          startDate: i < 6 ? d(seed.startDate) : d(seed.schedule[0].start),
+          endDate:
+            i < 6
+              ? d(seed.schedule[Math.min(2, seed.schedule.length - 1)].end)
+              : d(seed.endDate),
+        },
+      });
+      phases.set(code, phase);
+      await prisma.deliverable.create({
+        data: {
+          name: `${code} - Livrable principal`,
+          dueAt: phase.endDate,
+          status:
+            phase.progress === 100
+              ? ApprovalStatus.APPROVED
+              : ApprovalStatus.PENDING,
+          phaseId: phase.id,
+        },
+      });
+    }
+
+    const lots = new Map<string, { id: string }>();
+    for (const [number, name, trade] of lotTemplates) {
+      const company = companies.get(trade);
+      const lot = await prisma.lot.create({
+        data: {
+          number,
+          name,
+          projectId: project.id,
+          companyId: company?.id,
+          estimate: money(Math.round(seed.worksBudget / lotTemplates.length)),
+          contractAmount: money(
+            Math.round((seed.worksBudget * 0.96) / lotTemplates.length),
+          ),
+        },
+      });
+      lots.set(number, lot);
+    }
+
+    const planningIds: string[] = [];
+    for (const item of seed.schedule) {
+      const planning = await prisma.planningTask.create({
+        data: {
+          title: item.title,
+          start: d(item.start),
+          end: d(item.end),
+          progress: item.progress,
+          milestone: item.milestone ?? false,
+          projectId: project.id,
+          phaseId: phases.get(item.phase)?.id,
+          lotId: item.lot ? lots.get(item.lot)?.id : undefined,
+          baselineStart: d(item.start),
+          baselineEnd: d(item.end),
+          dependencyIds:
+            item.dependencies
+              ?.map((index) => planningIds[index])
+              .filter(Boolean) ?? [],
+        },
+      });
+      planningIds.push(planning.id);
+    }
+
+    const taskRows = [
+      [
+        "Valider les plans d’exécution",
+        "VISA",
+        TaskStatus.IN_PROGRESS,
+        Priority.HIGH,
+        14,
+      ],
+      [
+        "Préparer le prochain compte rendu de chantier",
+        "DET",
+        TaskStatus.TODO,
+        Priority.NORMAL,
+        4,
+      ],
+      [
+        "Contrôler les situations de travaux",
+        "DET",
+        TaskStatus.REVIEW,
+        Priority.HIGH,
+        7,
+      ],
+      [
+        "Mettre à jour le planning OPC",
+        "OPC",
+        TaskStatus.IN_PROGRESS,
+        Priority.HIGH,
+        6,
+      ],
+      [
+        "Vérifier les fiches techniques entreprises",
+        "VISA",
+        TaskStatus.TODO,
+        Priority.NORMAL,
+        8,
+      ],
+      [
+        "Organiser la visite de pré-réception",
+        "AOR",
+        TaskStatus.TODO,
+        Priority.NORMAL,
+        5,
+      ],
+      [
+        "Suivre la levée des réserves",
+        "AOR",
+        TaskStatus.TODO,
+        Priority.HIGH,
+        10,
+      ],
+      [
+        "Archiver les documents validés",
+        "DET",
+        TaskStatus.DONE,
+        Priority.LOW,
+        3,
+      ],
+    ] as const;
+    for (let i = 0; i < taskRows.length; i++) {
+      const [title, phaseCode, status, priority, hours] = taskRows[i];
+      await prisma.workTask.create({
+        data: {
+          title,
+          description: `${title} pour le chantier ${seed.name}.`,
+          status,
+          priority,
+          startAt: d(seed.startDate),
+          dueAt: d(
+            seed.schedule[Math.min(i + 2, seed.schedule.length - 1)].end,
+          ),
+          plannedHours: hours,
+          actualHours:
+            status === TaskStatus.DONE
+              ? hours
+              : Math.round((hours * seed.progress) / 100),
+          projectId: project.id,
+          phaseId: phases.get(phaseCode)?.id,
+          assigneeId: admin.id,
+        },
+      });
+    }
+
+    const observationRows = [
+      [
+        "Contrôle des supports avant intervention",
+        "Zone principale",
+        Priority.HIGH,
+        ObservationStatus.OPEN,
+        "05",
+      ],
+      [
+        "Protection des ouvrages existants à compléter",
+        "Accès chantier",
+        Priority.NORMAL,
+        ObservationStatus.TO_VERIFY,
+        "01",
+      ],
+      [
+        "Reprise ponctuelle de finition",
+        "Façade nord",
+        Priority.NORMAL,
+        ObservationStatus.CORRECTED,
+        "16",
+      ],
+      [
+        "Nettoyage et évacuation des déchets",
+        "Zone de stockage",
+        Priority.LOW,
+        ObservationStatus.CLOSED,
+        "01",
+      ],
+    ] as const;
+    for (let i = 0; i < observationRows.length; i++) {
+      const [title, location, priority, status, lotNo] = observationRows[i];
+      const lot = lots.get(lotNo)!;
+      const companyId = (
+        await prisma.lot.findUnique({
+          where: { id: lot.id },
+          select: { companyId: true },
+        })
+      )?.companyId;
+      await prisma.observation.create({
+        data: {
+          title,
+          description: `${title}. Action à intégrer au prochain compte rendu.`,
+          location,
+          priority,
+          status,
+          dueAt: d(
+            seed.schedule[Math.min(i + 3, seed.schedule.length - 1)].end,
+          ),
+          projectId: project.id,
+          lotId: lot.id,
+          companyId: companyId ?? undefined,
+          photos: [],
+        },
+      });
+    }
+
+    const docs = [
+      ["Notice architecturale.pdf", "CONCEPTION"],
+      ["Planning travaux V1.pdf", "PLANNING"],
+      ["CR chantier 001.pdf", "COMPTE_RENDU"],
+      ["Plan RDC indice C.pdf", "PLANS"],
+      ["Tableau des visas.xlsx", "VISA"],
+    ];
+    for (const [name, category] of docs) {
+      await prisma.document.create({
+        data: {
+          name,
+          category,
+          mimeType: name.endsWith(".xlsx")
+            ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            : "application/pdf",
+          storageKey: `demo/${seed.reference}/${name}`,
+          visibility: DocumentVisibility.INTERNAL,
+          approvalStatus:
+            category === "PLANS"
+              ? ApprovalStatus.APPROVED
+              : ApprovalStatus.DRAFT,
+          projectId: project.id,
+        },
+      });
+    }
+
+    const budgetCategories = [
+      "Gros œuvre",
+      "Clos couvert",
+      "Lots techniques",
+      "Second œuvre",
+      "Aménagements extérieurs",
+    ];
+    for (let i = 0; i < budgetCategories.length; i++) {
+      const budget = Math.round(seed.worksBudget / budgetCategories.length);
+      const ratio = Math.min(
+        1,
+        seed.progress / 100 + (i % 2 === 0 ? 0.08 : -0.05),
+      );
+      await prisma.budgetLine.create({
+        data: {
+          label: budgetCategories[i],
+          category: "TRAVAUX",
+          budget: money(budget),
+          committed: money(Math.round(budget * Math.max(0, ratio))),
+          paid: money(Math.round(budget * Math.max(0, ratio - 0.18))),
+          projectId: project.id,
+        },
+      });
+    }
+
+    await prisma.meeting.create({
+      data: {
+        number: 1,
+        date: d(seed.schedule[Math.min(4, seed.schedule.length - 1)].start),
+        weather: "Couvert, 14 °C",
+        attendees: ["Maîtrise d’ouvrage", "Maîtrise d’œuvre", "Entreprises"],
+        notes: [
+          { topic: "Planning", decision: "Maintien de la date contractuelle" },
+          {
+            topic: "Sécurité",
+            decision: "Rappel des règles d’accès au chantier",
+          },
+        ],
+        publishedAt: d(
+          seed.schedule[Math.min(4, seed.schedule.length - 1)].end,
+        ),
+        projectId: project.id,
+      },
+    });
+
+    if (seed.status === ProjectStatus.RECEPTION || seed.progress >= 80) {
+      const reception = await prisma.reception.create({
+        data: {
+          date: d(seed.endDate),
+          status: "PLANIFIEE",
+          projectId: project.id,
+        },
+      });
+      await prisma.reserve.createMany({
+        data: [
+          {
+            title: "Reprise de peinture ponctuelle",
+            location: "Circulation principale",
+            status: ObservationStatus.OPEN,
+            dueAt: d(seed.endDate),
+            receptionId: reception.id,
+          },
+          {
+            title: "Réglage d’une menuiserie",
+            location: "Salle de réunion",
+            status: ObservationStatus.TO_VERIFY,
+            dueAt: d(seed.endDate),
+            receptionId: reception.id,
+          },
+        ],
+      });
+    }
+  }
+
+  console.log(
+    "Seed terminé : 5 chantiers, lots, Gantt, tâches, entreprises, observations, documents et budgets créés.",
+  );
+  console.log("Compte admin conservé/créé : admin@batipilot.local");
+}
+
+main()
+  .catch((error) => {
+    console.error("Échec du seed BatiPilot :", error);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
+
+===== FILE: next-env.d.ts =====
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+import "./.next/types/routes.d.ts";
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+
+===== FILE: package.json =====
+{
+  "name":"batipilot-full","version":"1.0.0","private":true,
+  "scripts":{"dev":"next dev","build":"prisma generate && next build","start":"next start","postinstall":"prisma generate","db:push":"prisma db push","db:seed":"tsx prisma/seed.ts","test":"vitest run"},
+  "prisma":{"seed":"tsx prisma/seed.ts"},
+  "dependencies":{"@prisma/client":"6.19.0","next":"16.0.10","react":"19.2.0","react-dom":"19.2.0"},
+  "devDependencies":{"@types/node":"24.10.0","@types/react":"19.2.2","@types/react-dom":"19.2.2","prisma":"6.19.0","tsx":"4.20.6","typescript":"5.9.3","vitest":"3.2.4"}
+}
+
+===== FILE: STYLE_ADDON.css =====
+/* Copier à la fin de app/style.css */
+.modal{position:fixed;inset:0;background:#14263199;display:grid;place-items:center;z-index:20;padding:20px}.form{width:650px;max-width:95vw;max-height:90vh;overflow:auto}.form label{display:block;font-weight:700;font-size:13px;margin:11px 0}.form input,.form select,.form textarea{display:block;width:100%;padding:10px;border:1px solid #cad8df;border-radius:8px;margin-top:5px}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}.error{background:#fee;color:#922;padding:10px;border-radius:8px}.block{padding:13px;border-bottom:1px solid #e5ecef}.block>span{float:right}.ganttApi{display:grid;grid-template-columns:2fr 1fr 1fr 2fr;gap:4px}.ganttApi>b,.ganttRow>*{padding:10px;border-bottom:1px solid #e5ecef}.ganttRow{display:contents}.row button{margin-left:8px;padding:6px 9px}
+
+===== FILE: STYLE_ADDON_V51.css =====
+.loading{min-height:100vh;display:grid;place-items:center}.modal{position:fixed;inset:0;background:#14263199;display:grid;place-items:center;z-index:50;padding:20px}.form{width:620px;max-width:95vw;max-height:90vh;overflow:auto}.form label{display:block;font-weight:700;font-size:13px;margin:12px 0}.form input,.form select,.form textarea{display:block;width:100%;padding:10px;border:1px solid #cad8df;border-radius:8px;margin-top:5px}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.error{background:#fee;color:#922;padding:10px;border-radius:8px}.ganttLiveRow{display:grid;grid-template-columns:2fr 2fr 2fr 2fr 50px;gap:10px;align-items:center;padding:10px;border-bottom:1px solid #e6edef}.kanban select{width:100%;margin-top:10px;padding:7px}
+
+===== FILE: STYLE_V52.css =====
+/* BatiPilot V5.2 - mire premium */
+.bpLogin{min-height:100vh;display:grid;grid-template-columns:minmax(480px,1.08fr) minmax(520px,.92fr);background:#f7fbfd;color:#172431}.bpLoginVisual{position:relative;padding:58px 7vw 48px;overflow:hidden;color:#fff;background:linear-gradient(140deg,#122531 0%,#173b50 42%,#0a1720 100%)}.bpLoginVisual:after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 80% 45%,#40a2d133,transparent 34%),linear-gradient(115deg,transparent 60%,#ffffff08 60%);pointer-events:none}.bpLoginShade{position:absolute;right:-10%;bottom:-12%;width:62%;height:54%;border:1px solid #40a2d133;transform:skew(-12deg);background:linear-gradient(135deg,#40a2d115,transparent)}.bpLoginBrand{display:flex;gap:15px;align-items:center;position:relative;z-index:1}.bpLoginBrand img{width:74px;height:74px;object-fit:contain;border-radius:14px;background:#fff}.bpLoginBrand b{font-size:38px;letter-spacing:-2px}.bpLoginBrand b span,.bpLoginPitch h1 span,.bpLoginCard h2 span{color:#40a2d1}.bpLoginBrand small{display:block;color:#b9cbd4;letter-spacing:4px;font-size:10px}.bpLoginPitch{position:relative;z-index:1;max-width:600px;margin-top:70px}.bpLoginPitch h1{font-size:48px;line-height:1.08;margin:0 0 25px;letter-spacing:-1.5px}.bpLoginPitch>p{max-width:530px;color:#c4d5dd;line-height:1.55;font-size:17px}.bpLoginPitch ul{list-style:none;padding:0;margin:35px 0 0}.bpLoginPitch li{display:flex;gap:16px;align-items:center;margin:18px 0}.bpLoginPitch li>i{width:48px;height:48px;display:grid;place-items:center;border-radius:50%;font-style:normal;font-weight:800;color:#45b5e9;background:#123d56;border:1px solid #2e6683}.bpLoginPitch li b{display:block;font-size:16px}.bpLoginPitch li small{display:block;color:#aec4cf;margin-top:3px}.bpLoginSignature{position:absolute;z-index:1;bottom:42px;left:7vw;font-size:23px;font-style:italic;color:#fff;transform:rotate(-4deg)}.bpLoginFormSide{position:relative;display:grid;place-items:center;padding:70px 7vw 85px;background:radial-gradient(circle at 90% 80%,#40a2d10c,transparent 35%),#f9fcfd}.bpLang{position:absolute;right:7vw;top:30px;font-size:14px}.bpLoginCard{width:min(560px,100%);background:#fff;border:1px solid #e6eff3;border-radius:22px;padding:45px 50px;box-shadow:0 20px 65px #173b5014}.bpLoginCard h2{font-size:32px;margin:0 0 8px;letter-spacing:-1px}.bpLoginCard>p{margin:0 0 32px;color:#6e7d85}.bpLoginCard>label{display:block;font-size:13px;font-weight:800;margin:20px 0}.bpInput{display:flex;align-items:center;height:52px;border:1px solid #cbd9df;border-radius:9px;margin-top:7px;padding:0 13px;transition:.2s}.bpInput:focus-within{border-color:#40a2d1;box-shadow:0 0 0 3px #40a2d118}.bpInput>i{font-style:normal;width:25px;color:#607784}.bpInput input{border:0;outline:0;flex:1;font:inherit;padding:0 6px;background:transparent}.bpEye,.bpLink{border:0;background:none;color:#2387b8;cursor:pointer}.bpLoginOptions{display:flex;justify-content:space-between;align-items:center;font-size:13px;margin:4px 0 22px}.bpRemember{display:flex;align-items:center;gap:8px}.bpRemember input{width:17px;height:17px;accent-color:#40a2d1}.bpLoginError{background:#fff1f1;border:1px solid #f2caca;color:#943535;padding:10px 12px;border-radius:8px;margin-bottom:14px;font-size:13px}.bpLoginSubmit{width:100%;height:54px;border:0;border-radius:9px;color:#fff;background:linear-gradient(90deg,#2698d0,#40a2d1);font-weight:800;font-size:15px;cursor:pointer}.bpLoginSubmit:disabled{opacity:.65;cursor:wait}.bpSecurity{margin-top:27px;padding:16px;border-radius:10px;background:#eff8fc;color:#1c506b}.bpSecurity b,.bpSecurity small{display:block}.bpSecurity small{margin-top:6px;color:#697e89}.bpLoginFormSide footer{position:absolute;bottom:26px;text-align:center;color:#637680;font-size:12px}.bpLoginFormSide footer small{display:block;margin-top:9px}@media(max-width:950px){.bpLogin{grid-template-columns:1fr}.bpLoginVisual{display:none}.bpLoginFormSide{min-height:100vh;padding:80px 22px}.bpLoginCard{padding:34px 28px}.bpLang{right:24px}.bpLoginFormSide footer{position:static;margin-top:24px}}@media(max-width:480px){.bpLoginCard h2{font-size:26px}.bpLoginOptions{align-items:flex-start;gap:12px;flex-direction:column}.bpLoginCard{box-shadow:none;border-radius:15px;padding:28px 21px}}
+
+===== FILE: STYLE_V54.css =====
+.bp54Workspace{min-height:100vh;background:#f4f8fa;padding:28px 34px;color:#26333a}.bp54ProjectHead{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:18px;margin-bottom:18px}.bp54ProjectHead h1{margin:3px 0}.bp54ProgressCircle{width:74px;height:74px;border:8px solid #dceef5;border-top-color:#40a2d1;border-right-color:#40a2d1;border-radius:50%;display:grid;place-items:center;color:#247fa9;font-weight:900}.bp54Tabs{display:flex;gap:4px;border-bottom:1px solid #dbe5e9;margin-bottom:16px;overflow:auto}.bp54Tabs button{border:0;background:none;padding:11px 13px;color:#61757f;white-space:nowrap;cursor:pointer}.bp54Tabs button.active{color:#2388b8;border-bottom:3px solid #40a2d1;font-weight:800}.bp54PhaseRibbon{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}.bp54PhaseRibbon article{background:#eef5f8;border-radius:9px;padding:10px}.bp54PhaseRibbon article.done{background:#dcf3e7}.bp54PhaseRibbon b,.bp54PhaseRibbon small,.bp54PhaseRibbon span{display:block}.bp54PhaseRibbon small{font-size:9px;color:#6f8188;min-height:28px}.bp54PhaseRibbon span{font-size:10px;color:#2983ad;margin-top:5px}.bp54PhaseList>div,.bp54Gantt>div{display:grid;grid-template-columns:65px 2fr 2fr 55px;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #e8eef1}.bp54PhaseList small{display:block;color:#74858c}.bp54Gantt>div{grid-template-columns:1.5fr 1.6fr 2fr 1.5fr 45px}.bp54Gantt>div>span{height:9px;background:#e6eef1;border-radius:99px;overflow:hidden}.bp54Gantt>div>span i{height:100%;display:block;background:#40a2d1}.bp54TaskTable{display:grid;grid-template-columns:2fr 1fr 1.5fr 1fr;gap:1px;background:#e4ecef}.bp54TaskTable>*{background:#fff;padding:9px}.bp54TaskTable .contents{display:contents}.bp54TaskTable select{border:1px solid #d2dfe4;border-radius:6px;padding:6px;background:#fff}@media(max-width:900px){.bp54PhaseRibbon{grid-template-columns:repeat(3,1fr)}.bp54TaskTable{grid-template-columns:1fr}.bp54TaskTable .contents{display:contents}.bp54ProjectHead{grid-template-columns:1fr auto}.bp54ProjectHead>.outline{grid-column:1/-1;width:max-content}}@media(max-width:600px){.bp54Workspace{padding:18px}.bp54PhaseRibbon{grid-template-columns:repeat(2,1fr)}.bp54PhaseList>div,.bp54Gantt>div{grid-template-columns:1fr}.bp54ProgressCircle{width:62px;height:62px}}
+
+===== FILE: STYLE_V55.css =====
+.v55Work{min-height:100vh;background:#f4f8fa;padding:28px 34px;color:#26333a}.v55Work>header{display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center}.v55Work h1{margin:3px 0}.v55Circle{width:74px;height:74px;border:8px solid #dceef5;border-right-color:#40a2d1;border-top-color:#40a2d1;border-radius:50%;display:grid;place-items:center;color:#2787b2}.v55Tabs{display:flex;overflow:auto;border-bottom:1px solid #dbe5e9;margin:18px 0}.v55Tabs button{border:0;background:none;padding:11px 13px;color:#687b84;white-space:nowrap}.v55Tabs button.active{color:#268abb;border-bottom:3px solid #40a2d1;font-weight:800}.v55Ribbon{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}.v55Ribbon article{padding:10px;background:#edf5f8;border-radius:9px}.v55Ribbon article.done{background:#dcf3e7}.v55Ribbon b,.v55Ribbon small,.v55Ribbon span{display:block}.v55Ribbon small{min-height:28px;color:#72838b;font-size:9px}.v55Phase>div{display:grid;grid-template-columns:65px 2fr 2fr 55px;gap:12px;align-items:center;padding:10px;border-bottom:1px solid #e8eef1}.v55Phase small{display:block;color:#74858c}.v55Gantt>div{display:grid;grid-template-columns:1.4fr 1.5fr 2fr 1fr 1.4fr 45px;gap:10px;align-items:center;padding:10px;border-bottom:1px solid #e8eef1}.v55Gantt b small{display:block;color:#40a2d1}.v55Gantt>div>i{height:9px;background:#e5edf1;border-radius:99px;overflow:hidden}.v55Gantt>div>i em{display:block;height:100%;background:#40a2d1}.v55Task{display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr .7fr;gap:1px;background:#e6edef}.v55Task>*{background:#fff;padding:8px}.v55Task .contents{display:contents}.v55Task select{border:1px solid #d4e0e5;border-radius:6px;padding:6px}.v55Filters{display:flex;gap:8px;margin-bottom:12px}.v55Filters select{padding:9px;border:1px solid #d3dfe4;border-radius:7px;background:#fff}.v55Capacity>div{display:grid;grid-template-columns:180px 1fr 150px;gap:12px;align-items:center;padding:9px 0}.v55Capacity span{height:10px;background:#e5edf1;border-radius:99px;overflow:hidden}.v55Capacity span i{display:block;height:100%;border-radius:99px}.v55Capacity em{font-style:normal;color:#6d7d85;font-size:11px}@media(max-width:900px){.v55Ribbon{grid-template-columns:repeat(3,1fr)}.v55Task{grid-template-columns:1fr}.v55Task .contents{display:contents}.v55Gantt>div,.v55Phase>div{grid-template-columns:1fr}.v55Capacity>div{grid-template-columns:1fr}.v55Work{padding:18px}}@media(max-width:550px){.v55Ribbon{grid-template-columns:repeat(2,1fr)}.v55Filters{flex-direction:column}}
+
+===== FILE: tsconfig.json =====
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    },
+    "allowJs": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
+
