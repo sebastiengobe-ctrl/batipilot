@@ -1,0 +1,8 @@
+Dans components/BatiPilotApp.tsx V5.3 :
+1. ajouter `import ProjectWorkspace from './ProjectWorkspace';`
+2. dans App(), ajouter `const [openProject,setOpenProject]=useState<string|null>(null);`
+3. juste avant le return principal, ajouter :
+`if(openProject) return <ProjectWorkspace projectId={openProject} onBack={()=>{setOpenProject(null);load()}}/>;`
+4. dans la carte projet, remplacer `<button>Ouvrir →</button>` par `<button onClick={()=>setOpenProject(x.id)}>Ouvrir →</button>`.
+5. pour rendre le bouton accessible à Content(), passer `openProject` en callback `onOpenProject` à Content et l'utiliser dans la branche `projects`.
+Le fichier ProjectWorkspace.tsx fourni gère ensuite Synthèse, Phases MOE, Gantt projet et Tâches projet.
