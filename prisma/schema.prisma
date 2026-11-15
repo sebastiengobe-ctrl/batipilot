@@ -145,33 +145,33 @@ model Client {
 }
 
 model Company {
-  id             String       @id @default(cuid())
+  id             String        @id @default(cuid())
   name           String
   trade          String?
   email          String?
   phone          String?
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   lots           Lot[]
   observations   Observation[]
 }
 
 model Project {
-  id             String          @id @default(cuid())
+  id             String             @id @default(cuid())
   name           String
-  reference      String          @unique
+  reference      String             @unique
   address        String?
   description    String?
-  status         ProjectStatus   @default(PROSPECT)
-  progress       Int             @default(0)
+  status         ProjectStatus      @default(PROSPECT)
+  progress       Int                @default(0)
   worksBudget    Decimal?
   feesBudget     Decimal?
   startDate      DateTime?
   endDate        DateTime?
   organizationId String
-  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   clientId       String?
-  client         Client?         @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  client         Client?            @relation(fields: [clientId], references: [id], onDelete: SetNull)
   members        ProjectMember[]
   phases         Phase[]
   lots           Lot[]
@@ -183,8 +183,8 @@ model Project {
   signatures     SignatureRequest[]
   budgets        BudgetLine[]
   receptions     Reception[]
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
   @@index([organizationId, status])
 }
@@ -241,19 +241,19 @@ model Lot {
 }
 
 model PlanningTask {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   title         String
   start         DateTime
   end           DateTime
-  progress      Int      @default(0)
-  milestone     Boolean  @default(false)
+  progress      Int       @default(0)
+  milestone     Boolean   @default(false)
   baselineStart DateTime?
   baselineEnd   DateTime?
   dependencyIds Json?
   projectId     String
-  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   lotId         String?
-  lot           Lot?     @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  lot           Lot?      @relation(fields: [lotId], references: [id], onDelete: SetNull)
 }
 
 model WorkTask {
@@ -284,7 +284,7 @@ model TimeEntry {
 }
 
 model Meeting {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   number      Int
   date        DateTime
   weather     String?
@@ -292,7 +292,7 @@ model Meeting {
   notes       Json?
   publishedAt DateTime?
   projectId   String
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, number])
 }
@@ -315,17 +315,17 @@ model Observation {
 }
 
 model Document {
-  id              String             @id @default(cuid())
-  name            String
-  category        String
-  mimeType        String?
-  storageKey      String?
-  version         Int                @default(1)
-  visibility      DocumentVisibility @default(INTERNAL)
-  approvalStatus  ApprovalStatus     @default(DRAFT)
-  projectId       String
-  project         Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdAt       DateTime           @default(now())
+  id             String             @id @default(cuid())
+  name           String
+  category       String
+  mimeType       String?
+  storageKey     String?
+  version        Int                @default(1)
+  visibility     DocumentVisibility @default(INTERNAL)
+  approvalStatus ApprovalStatus     @default(DRAFT)
+  projectId      String
+  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt      DateTime           @default(now())
 }
 
 model SignatureRequest {

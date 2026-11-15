@@ -1,0 +1,2 @@
+import { db } from '@/lib/db';import { requireUser, fail } from '@/lib/auth';
+export async function PATCH(r:Request,{params}:{params:Promise<{id:string}>}){try{const u=await requireUser(),{id}=await params,b=await r.json();const x=await db.observation.findFirst({where:{id,project:{organizationId:u.organizationId}}});if(!x)throw Error('FORBIDDEN');return Response.json(await db.observation.update({where:{id},data:{status:b.status,dueAt:b.dueAt?new Date(b.dueAt):undefined}}))}catch(e){return fail(e)}}

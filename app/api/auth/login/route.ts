@@ -1,0 +1,2 @@
+import {db} from '@/lib/db';import {verifyPassword} from '@/lib/password';import {createSession} from '@/lib/auth';
+export async function POST(req:Request){const b=await req.json();const u=await db.user.findUnique({where:{email:String(b.email||'').trim().toLowerCase()}});if(!u||u.status!=='ACTIVE'||!await verifyPassword(String(b.password||''),u.passwordHash))return Response.json({error:'Identifiants invalides'},{status:401});await createSession(u.id);return Response.json({ok:true})}
