@@ -79,16 +79,18 @@ enum ObservationStatus {
 }
 
 model Organization {
-  id        String     @id @default(cuid())
-  name      String
-  agencies  Agency[]
-  users     User[]
-  clients   Client[]
-  companies Company[]
-  projects  Project[]
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  prospects Prospect[]
+  id             String           @id @default(cuid())
+  name           String
+  agencies       Agency[]
+  users          User[]
+  clients        Client[]
+  companies      Company[]
+  projects       Project[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  prospects      Prospect[]
+  articleLibrary ArticleLibrary[]
+  cctpLibrary    CctpArticle[]
 }
 
 model Agency {
@@ -149,16 +151,20 @@ model Client {
 }
 
 model Company {
-  id             String        @id @default(cuid())
-  name           String
-  trade          String?
-  email          String?
-  phone          String?
-  organizationId String
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  lots           Lot[]
-  observations   Observation[]
-  contracts      Contract[]
+  id                    String                @id @default(cuid())
+  name                  String
+  trade                 String?
+  email                 String?
+  phone                 String?
+  organizationId        String
+  organization          Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lots                  Lot[]
+  observations          Observation[]
+  contracts             Contract[]
+  consultationCompanies ConsultationCompany[]
+  offers                Offer[]
+  gpaItems              GpaItem[]
+  serviceOrders         ServiceOrder[]
 }
 
 model Project {
@@ -194,6 +200,12 @@ model Project {
   documentGenerations DocumentGeneration[]
   notifications       Notification[]
   feeInvoices         FeeInvoice[]
+  estimates           Estimate[]
+  quantitySheets      QuantitySheet[]
+  consultations       Consultation[]
+  feeInvoicesV8       FeeInvoiceV8[]
+  gpaItems            GpaItem[]
+  serviceOrders       ServiceOrder[]
 
   @@index([organizationId, status])
 }
@@ -236,18 +248,20 @@ model Deliverable {
 }
 
 model Lot {
-  id             String         @id @default(cuid())
-  number         String
-  name           String
-  estimate       Decimal?
-  contractAmount Decimal?
-  projectId      String
-  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  companyId      String?
-  company        Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  planning       PlanningTask[]
-  observations   Observation[]
-  contracts      Contract[]
+  id              String         @id @default(cuid())
+  number          String
+  name            String
+  estimate        Decimal?
+  contractAmount  Decimal?
+  projectId       String
+  project         Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  companyId       String?
+  company         Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  planning        PlanningTask[]
+  observations    Observation[]
+  contracts       Contract[]
+  estimateLines   EstimateLine[]
+  consultationsV8 Consultation[]
 
   @@unique([projectId, number])
 }
@@ -576,4 +590,189 @@ model FeeInvoice {
 
   @@unique([projectId, number])
   @@index([issuedAt, status])
+}
+
+model ArticleLibrary {
+  id                   String       @id @default(cuid())
+  reference            String
+  trade                String
+  designation          String
+  unit                 String
+  unitPrice            Decimal      @default(0)
+  vatRate              Decimal      @default(20)
+  technicalDescription String?
+  priceUpdatedAt       DateTime     @default(now())
+  organizationId       String
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, reference])
+  @@index([organizationId, trade])
+}
+
+model Estimate {
+  id        String         @id @default(cuid())
+  name      String
+  scenario  String         @default("TARGET")
+  version   String         @default("V1")
+  status    String         @default("DRAFT")
+  vatRate   Decimal        @default(20)
+  projectId String
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  lines     EstimateLine[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([projectId, status])
+}
+
+model EstimateLine {
+  id               String   @id @default(cuid())
+  designation      String
+  unit             String
+  quantity         Decimal  @default(0)
+  unitPrice        Decimal  @default(0)
+  vatRate          Decimal  @default(20)
+  estimateId       String
+  estimate         Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  lotId            String?
+  lot              Lot?     @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  articleReference String?
+
+  @@index([estimateId, lotId])
+}
+
+model QuantitySheet {
+  id         String   @id @default(cuid())
+  name       String
+  level      String?
+  roomCount  Int?
+  floorArea  Decimal?
+  perimeter  Decimal?
+  wallHeight Decimal?
+  openings   Json?
+  equipment  Json?
+  calculated Json?
+  overrides  Json?
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  updatedAt  DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+model CctpArticle {
+  id             String       @id @default(cuid())
+  reference      String
+  trade          String
+  chapter        String
+  title          String
+  description    String?
+  prescriptions  String?
+  performances   String?
+  standards      String?
+  variants       String?
+  unit           String?
+  source         String?
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, reference])
+  @@index([organizationId, trade])
+}
+
+model Consultation {
+  id         String                @id @default(cuid())
+  status     String                @default("PREPARATION")
+  sentAt     DateTime?
+  deadlineAt DateTime?
+  visitAt    DateTime?
+  projectId  String
+  project    Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  lotId      String
+  lot        Lot                   @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  companies  ConsultationCompany[]
+  offers     Offer[]
+  createdAt  DateTime              @default(now())
+
+  @@unique([projectId, lotId])
+}
+
+model ConsultationCompany {
+  id             String       @id @default(cuid())
+  consultationId String
+  consultation   Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  companyId      String
+  company        Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  acknowledgedAt DateTime?
+  question       String?
+  reminderAt     DateTime?
+
+  @@unique([consultationId, companyId])
+}
+
+model Offer {
+  id               String       @id @default(cuid())
+  consultationId   String
+  consultation     Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  companyId        String
+  company          Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  initialAmount    Decimal      @default(0)
+  corrections      Decimal      @default(0)
+  negotiatedAmount Decimal      @default(0)
+  technicalScore   Decimal?
+  financialScore   Decimal?
+  comment          String?
+  rank             Int?
+  selected         Boolean      @default(false)
+  receivedAt       DateTime     @default(now())
+
+  @@unique([consultationId, companyId])
+}
+
+model FeeInvoiceV8 {
+  id        String    @id @default(cuid())
+  number    String
+  phaseCode String?
+  amountHT  Decimal   @default(0)
+  vatRate   Decimal   @default(20)
+  issuedAt  DateTime  @default(now())
+  dueAt     DateTime?
+  paidAt    DateTime?
+  status    String    @default("DRAFT")
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+}
+
+model GpaItem {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  status      String    @default("OPEN")
+  startAt     DateTime
+  endAt       DateTime
+  closedAt    DateTime?
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  companyId   String?
+  company     Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, status, endAt])
+}
+
+model ServiceOrder {
+  id        String    @id @default(cuid())
+  number    String
+  title     String
+  amount    Decimal   @default(0)
+  status    String    @default("DRAFT")
+  issuedAt  DateTime?
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  companyId String?
+  company   Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, number])
 }
