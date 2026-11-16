@@ -1,0 +1,4 @@
+export function text(v:unknown,name:string,max=500){const s=String(v??'').trim();if(!s)throw new Error(`${name} requis`);if(s.length>max)throw new Error(`${name} trop long`);return s}
+export function optionalText(v:unknown,max=2000){if(v===null||v===undefined||v==='')return null;const s=String(v).trim();if(s.length>max)throw new Error('Valeur trop longue');return s}
+export function numberValue(v:unknown,name:string,min=0){const n=Number(v);if(!Number.isFinite(n)||n<min)throw new Error(`${name} invalide`);return n}
+export function dateValue(v:unknown,name:string){const d=new Date(String(v));if(Number.isNaN(+d))throw new Error(`${name} invalide`);return d}
