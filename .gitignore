@@ -52,3 +52,4 @@ backup-v7-*/
 /Fix-BatiPilot-V8-Situations.ps1
 /Install-BatiPilot-V8-Reception-Reserves.ps1
 /Install-BatiPilot-V8-Reception-Reserves-FIX.ps1
+/Install-BatiPilot-V8-GPA.ps1
