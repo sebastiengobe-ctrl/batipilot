@@ -38,3 +38,4 @@ backup-v7-*/
 # BatiPilot local backups
 
 /Fix-BatiPilot-V7-Prisma.ps1
+/Install-BatiPilot-V8-AllLots.ps1
