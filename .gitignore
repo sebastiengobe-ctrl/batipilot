@@ -44,3 +44,4 @@ backup-v7-*/
 /Install-BatiPilot-V8-UI-FIX.ps1
 /Install-BatiPilot-V8-Estimation.ps1
 /Install-BatiPilot-V8-Quantitatif.ps1
+/Install-BatiPilot-V8-Bibliotheques-DCE.ps1
