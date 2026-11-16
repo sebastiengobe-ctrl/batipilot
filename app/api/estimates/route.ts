@@ -1,0 +1,13 @@
+import {db} from '@/lib/db';
+import {requireUser,fail} from '@/lib/auth';
+import {assertAction} from '@/lib/permissions';
+import {audit} from '@/lib/audit';
+
+async function ownedProject(projectId:string,organizationId:string){
+ const p=await db.project.findFirst({where:{id:projectId,organizationId},select:{id:true}});
+ if(!p) throw new Error('FORBIDDEN'); return p;
+}
+export async function GET(r:Request){try{const u=await requireUser();const projectId=new URL(r.url).searchParams.get('projectId');if(!projectId) return Response.json({error:'projectId requis'},{status:400});await ownedProject(projectId,u.organizationId);const rows=await db.estimate.findMany({where:{projectId},include:{lines:{include:{lot:true},orderBy:{designation:'asc'}}},orderBy:{updatedAt:'desc'}});return Response.json(rows)}catch(e){return fail(e)}}
+export async function POST(r:Request){try{const u=await requireUser();assertAction(u.role,'create');const b=await r.json();await ownedProject(b.projectId,u.organizationId);const row=await db.estimate.create({data:{projectId:b.projectId,name:String(b.name||'Estimation').trim(),scenario:b.scenario||'TARGET',version:b.version||'V1',vatRate:Number(b.vatRate??20)}});await audit(db,{organizationId:u.organizationId,userId:u.id,action:'CREATE',entity:'Estimate',entityId:row.id,newValue:row});return Response.json(row,{status:201})}catch(e){return fail(e)}}
+export async function PATCH(r:Request){try{const u=await requireUser();assertAction(u.role,'update');const b=await r.json();const old=await db.estimate.findFirst({where:{id:b.id,project:{organizationId:u.organizationId}}});if(!old) throw new Error('FORBIDDEN');const row=await db.estimate.update({where:{id:b.id},data:{name:b.name??undefined,scenario:b.scenario??undefined,version:b.version??undefined,vatRate:b.vatRate!==undefined?Number(b.vatRate):undefined,status:b.status??undefined}});await audit(db,{organizationId:u.organizationId,userId:u.id,action:'UPDATE',entity:'Estimate',entityId:row.id,oldValue:old,newValue:row});return Response.json(row)}catch(e){return fail(e)}}
+export async function DELETE(r:Request){try{const u=await requireUser();assertAction(u.role,'delete');const id=new URL(r.url).searchParams.get('id');if(!id)return Response.json({error:'id requis'},{status:400});const old=await db.estimate.findFirst({where:{id,project:{organizationId:u.organizationId}}});if(!old)throw new Error('FORBIDDEN');await db.estimate.delete({where:{id}});await audit(db,{organizationId:u.organizationId,userId:u.id,action:'DELETE',entity:'Estimate',entityId:id,oldValue:old});return Response.json({ok:true})}catch(e){return fail(e)}}
