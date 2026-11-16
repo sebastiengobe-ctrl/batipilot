@@ -44,3 +44,152 @@
 
 /* GPA V8 */
 .gpaAlert{background:#fff2d8;border:1px solid #f0be5b;color:#7c5705;padding:10px 12px;border-radius:8px;margin:10px 0}.gpaForm{display:grid;grid-template-columns:1.4fr .8fr .8fr 1.2fr 2fr auto;gap:7px}.gpaForm input,.gpaForm select{padding:8px;border:1px solid #d5e1e6;border-radius:7px}.gpaForm button,.gpaFlow button{border:1px solid #40A2D1;background:#fff;color:#267aa3;border-radius:7px;padding:8px 10px;font-weight:700}.gpaRows{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:10px;margin-top:13px}.gpaRows article{border:1px solid #dce7eb;border-radius:10px;padding:12px}.gpaRows article.urgent{border-color:#e29c32;background:#fffaf0}.gpaRows header{display:flex;justify-content:space-between;gap:10px}.gpaRows header small{display:block;color:#65757d}.gpaFlow{display:flex;gap:5px;flex-wrap:wrap;margin-top:10px}.gpaFlow button.active{background:#40A2D1;color:#fff}@media(max-width:1000px){.gpaForm{grid-template-columns:1fr 1fr}}
+
+/* =========================================================
+   BATIPILOT - PLANNING EQUIPE / CHARGE
+   ========================================================= */
+
+.teamPlan {
+  width: 100%;
+}
+
+.teamPlan > p {
+  color: #65757d;
+  margin: 4px 0 18px;
+}
+
+.teamMatrix {
+  display: grid;
+  grid-template-columns: 190px repeat(4, minmax(230px, 1fr));
+  width: 100%;
+  min-width: 1110px;
+  border: 1px solid #dce7eb;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.teamPlan {
+  overflow-x: auto;
+}
+
+.teamHead {
+  background: #262223;
+  color: #ffffff;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  border-right: 1px solid #484244;
+}
+
+.teamHead small {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.75;
+}
+
+.person {
+  padding: 12px;
+  background: #ffffff;
+  border-right: 1px solid #dce7eb;
+  border-bottom: 1px solid #dce7eb;
+}
+
+.person b {
+  display: block;
+  color: #262223;
+}
+
+.person small {
+  display: block;
+  margin-top: 5px;
+  color: #65757d;
+  font-size: 11px;
+}
+
+.weekCell {
+  min-height: 145px;
+  padding: 9px;
+  border-right: 1px solid #dce7eb;
+  border-bottom: 1px solid #dce7eb;
+  transition: background 0.15s ease;
+}
+
+.weekCell.green {
+  background: #eef9f1;
+}
+
+.weekCell.blue {
+  background: #edf6fb;
+}
+
+.weekCell.orange {
+  background: #fff3e4;
+}
+
+.weekCell.red {
+  background: #fff0f0;
+}
+
+.load {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 9px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+}
+
+.load b {
+  font-size: 12px;
+}
+
+.load span {
+  padding: 3px 7px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.8);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.planTask {
+  background: #ffffff;
+  border: 1px solid #dce7eb;
+  border-left: 4px solid #40A2D1;
+  border-radius: 7px;
+  padding: 8px;
+  margin: 6px 0;
+  cursor: grab;
+  box-shadow: 0 1px 3px rgba(38,34,35,0.06);
+}
+
+.planTask:hover {
+  border-color: #40A2D1;
+  box-shadow: 0 2px 6px rgba(38,34,35,0.10);
+}
+
+.planTask:active {
+  cursor: grabbing;
+}
+
+.planTask b {
+  display: block;
+  color: #262223;
+  font-size: 12px;
+}
+
+.planTask small {
+  display: block;
+  margin-top: 4px;
+  color: #65757d;
+  font-size: 10px;
+}
+
+@media (max-width: 900px) {
+  .teamMatrix {
+    grid-template-columns: 160px repeat(4, 220px);
+  }
+}

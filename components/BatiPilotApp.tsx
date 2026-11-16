@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { modules } from '@/lib/modules';
 import ProjectWorkspace from './ProjectWorkspace';
+import TeamPlanningWorkspace from './TeamPlanningWorkspace';
 
 type Any = Record<string, any>;
 type Role = 'ADMIN' | 'PROJECT_MANAGER' | 'COLLABORATOR' | 'CLIENT' | 'COMPANY';
@@ -155,7 +156,7 @@ function Content({ page, data, update, onOpenProject }: { page: string; data: Re
   }
   if (page === 'gantt') return <Panel title="Planning Gantt global"><Rows rows={rows} /></Panel>;
   if (page === 'site') return <Panel title="Observations chantier"><Rows rows={rows} /></Panel>;
-  if (page === 'capacity') return <Panel title="Charge & capacité"><Rows rows={(data.tasks || []) as Any[]} /></Panel>;
+if (page === 'capacity') return <TeamPlanningWorkspace />;
   if (page === 'client') return <Panel title="Mes projets"><Rows rows={(data.projects || []) as Any[]} /></Panel>;
   if (page === 'consultations') return <Panel title="Consultations entreprises"><Rows rows={(data.companies || []) as Any[]} /></Panel>;
   return <Panel title={modules.find((m) => m.id === page)?.label || page}><Rows rows={rows} /></Panel>;
