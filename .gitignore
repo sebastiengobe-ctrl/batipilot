@@ -26,4 +26,15 @@ Desktop.ini
 
 # IDE
 .vscode/
-.idea/
+.idea/Fix-BatiPilot-V7-Prisma.ps1
+Install-BatiPilot-V7.ps1
+migration-v6-preview.sql
+schema-neon-actuel.prisma
+prisma/schema-erreur-backup.prisma
+prisma/schema-before-v6.prisma
+*-before-v6.tsx
+BatiPilot-V6/
+backup-v7-*/
+# BatiPilot local backups
+
+/Fix-BatiPilot-V7-Prisma.ps1
