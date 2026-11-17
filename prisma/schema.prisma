@@ -168,21 +168,23 @@ model Company {
 }
 
 model Project {
-  id                  String               @id @default(cuid())
+  projectType         String                   @default("NEW")
+  milestoneStatuses   ProjectMilestoneStatus[]
+  id                  String                   @id @default(cuid())
   name                String
-  reference           String               @unique
+  reference           String                   @unique
   address             String?
   description         String?
-  status              ProjectStatus        @default(PROSPECT)
-  progress            Int                  @default(0)
+  status              ProjectStatus            @default(PROSPECT)
+  progress            Int                      @default(0)
   worksBudget         Decimal?
   feesBudget          Decimal?
   startDate           DateTime?
   endDate             DateTime?
   organizationId      String
-  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization        Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   clientId            String?
-  client              Client?              @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  client              Client?                  @relation(fields: [clientId], references: [id], onDelete: SetNull)
   members             ProjectMember[]
   phases              Phase[]
   lots                Lot[]
@@ -194,8 +196,8 @@ model Project {
   signatures          SignatureRequest[]
   budgets             BudgetLine[]
   receptions          Reception[]
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
   contracts           Contract[]
   documentGenerations DocumentGeneration[]
   notifications       Notification[]
@@ -775,4 +777,16 @@ model ServiceOrder {
   company   Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
 
   @@unique([projectId, number])
+}
+
+model ProjectMilestoneStatus {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  key       String
+  status    String   @default("NOT_STARTED")
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, key])
+  @@index([projectId, status])
 }
